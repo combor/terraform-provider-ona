@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint-test-build:
+    name: Lint, Test, Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9.2.0
+        with:
+          version: v2.10.1
+          args: --timeout=5m
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.0
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Integration (apply/destroy runner)
+        env:
+          GITPOD_API_KEY: ${{ secrets.GITPOD_API_KEY }}
+          RUNNER_MANAGER_ID: ${{ secrets.RUNNER_MANAGER_ID }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          go build -o dist/terraform-provider-ona .
+
+          cat > "${RUNNER_TEMP}/terraformrc" <<EOF
+          provider_installation {
+            dev_overrides {
+              "combor/ona" = "${GITHUB_WORKSPACE}/dist"
+            }
+            direct {}
+          }
+          EOF
+          export TF_CLI_CONFIG_FILE="${RUNNER_TEMP}/terraformrc"
+
+          RUNNER_NAME="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          apply_attempted=0
+
+          cleanup() {
+            status=$?
+            trap - EXIT
+            set +e
+
+            if [ "${apply_attempted}" -eq 1 ]; then
+              terraform -chdir=examples destroy -auto-approve -input=false \
+                -var "runner_name=${RUNNER_NAME}" \
+                -var "runner_provider_type=RUNNER_PROVIDER_MANAGED" \
+                -var "runner_manager_id=${RUNNER_MANAGER_ID}"
+              destroy_status=$?
+              if [ "${status}" -eq 0 ] && [ "${destroy_status}" -ne 0 ]; then
+                status="${destroy_status}"
+              fi
+            fi
+
+            exit "${status}"
+          }
+          trap cleanup EXIT
+
+          apply_attempted=1
+          terraform -chdir=examples apply -auto-approve -input=false \
+            -var "runner_name=${RUNNER_NAME}" \
+            -var "runner_provider_type=RUNNER_PROVIDER_MANAGED" \
+            -var "runner_manager_id=${RUNNER_MANAGER_ID}"

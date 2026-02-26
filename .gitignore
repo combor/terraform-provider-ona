@@ -1,0 +1,7 @@
+terraform-provider-ona
+dist/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+gitpod-sdk-go/
