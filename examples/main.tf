@@ -31,7 +31,3 @@ resource "ona_runner" "example" {
     }
   }
 }
-
-data "ona_runner" "example" {
-  id = ona_runner.example.id
-}

@@ -5,78 +5,56 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
-	"github.com/hashicorp/terraform-plugin-testing/statecheck"
-	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
-func TestAccExampleResource(t *testing.T) {
+func TestAccRunnerResource(t *testing.T) {
+	testAccPreCheck(t)
+
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			// Create and Read testing
+			// Create and Read
 			{
-				Config: testAccExampleResourceConfig("one"),
-				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("id"),
-						knownvalue.StringExact("example-id"),
-					),
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("defaulted"),
-						knownvalue.StringExact("example value when not configured"),
-					),
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("configurable_attribute"),
-						knownvalue.StringExact("one"),
-					),
-				},
+				Config: testAccRunnerConfig("tf-acc-test", "RUNNER_PROVIDER_AWS_EC2"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("ona_runner.test", "id"),
+					resource.TestCheckResourceAttr("ona_runner.test", "name", "tf-acc-test"),
+					resource.TestCheckResourceAttr("ona_runner.test", "provider_type", "RUNNER_PROVIDER_AWS_EC2"),
+					resource.TestCheckResourceAttrSet("ona_runner.test", "status.phase"),
+				),
 			},
-			// ImportState testing
+			// Import
 			{
-				ResourceName:      "scaffolding_example.test",
+				ResourceName:      "ona_runner.test",
 				ImportState:       true,
 				ImportStateVerify: true,
-				// This is not normally necessary, but is here because this
-				// example code does not have an actual upstream service.
-				// Once the Read method is able to refresh information from
-				// the upstream service, this can be removed.
-				ImportStateVerifyIgnore: []string{"configurable_attribute", "defaulted"},
 			},
-			// Update and Read testing
+			// Update name
 			{
-				Config: testAccExampleResourceConfig("two"),
-				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("id"),
-						knownvalue.StringExact("example-id"),
-					),
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("defaulted"),
-						knownvalue.StringExact("example value when not configured"),
-					),
-					statecheck.ExpectKnownValue(
-						"scaffolding_example.test",
-						tfjsonpath.New("configurable_attribute"),
-						knownvalue.StringExact("two"),
-					),
-				},
+				Config: testAccRunnerConfig("tf-acc-test-updated", "RUNNER_PROVIDER_AWS_EC2"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("ona_runner.test", "name", "tf-acc-test-updated"),
+				),
 			},
-			// Delete testing automatically occurs in TestCase
 		},
 	})
 }
 
-func testAccExampleResourceConfig(configurableAttribute string) string {
+func testAccRunnerConfig(name, providerType string) string {
 	return fmt.Sprintf(`
-resource "scaffolding_example" "test" {
-  configurable_attribute = %[1]q
+resource "ona_runner" "test" {
+  name          = %q
+  provider_type = %q
+
+  spec = {
+    desired_phase = "RUNNER_PHASE_ACTIVE"
+    configuration = {
+      region          = "us-west-2"
+      auto_update     = true
+      release_channel = "RUNNER_RELEASE_CHANNEL_STABLE"
+      log_level       = "LOG_LEVEL_INFO"
+    }
+  }
 }
-`, configurableAttribute)
+`, name, providerType)
 }
