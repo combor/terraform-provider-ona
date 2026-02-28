@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -35,8 +36,8 @@ type runnerModel struct {
 	Name            types.String       `tfsdk:"name"`
 	ProviderType    types.String       `tfsdk:"provider_type"`
 	RunnerManagerID types.String       `tfsdk:"runner_manager_id"`
-	Spec            *runnerSpecModel   `tfsdk:"spec"`
-	Status          *runnerStatusModel `tfsdk:"status"`
+	Spec   *runnerSpecModel `tfsdk:"spec"`
+	Status types.Object     `tfsdk:"status"`
 }
 
 type runnerSpecModel struct {
@@ -57,13 +58,6 @@ type runnerMetricsModel struct {
 	URL      types.String `tfsdk:"url"`
 	Username types.String `tfsdk:"username"`
 	Password types.String `tfsdk:"password"`
-}
-
-type runnerStatusModel struct {
-	Phase   types.String `tfsdk:"phase"`
-	Message types.String `tfsdk:"message"`
-	Version types.String `tfsdk:"version"`
-	Region  types.String `tfsdk:"region"`
 }
 
 func (r *runnerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -426,13 +420,20 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 		m.Spec = spec
 	}
 
-	// Map status
-	m.Status = &runnerStatusModel{
-		Phase:   types.StringValue(string(runner.Status.Phase)),
-		Message: types.StringValue(runner.Status.Message),
-		Version: types.StringValue(runner.Status.Version),
-		Region:  types.StringValue(runner.Status.Region),
+	// Map status as types.Object
+	statusAttrTypes := map[string]attr.Type{
+		"phase":   types.StringType,
+		"message": types.StringType,
+		"version": types.StringType,
+		"region":  types.StringType,
 	}
+	statusValues := map[string]attr.Value{
+		"phase":   types.StringValue(string(runner.Status.Phase)),
+		"message": types.StringValue(runner.Status.Message),
+		"version": types.StringValue(runner.Status.Version),
+		"region":  types.StringValue(runner.Status.Region),
+	}
+	m.Status, _ = types.ObjectValue(statusAttrTypes, statusValues)
 
 	return m
 }
