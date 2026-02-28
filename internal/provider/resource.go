@@ -176,7 +176,7 @@ func (r *runnerResource) Create(ctx context.Context, req resource.CreateRequest,
 		Name:     gitpod.F(plan.Name.ValueString()),
 		Provider: gitpod.F(gitpod.RunnerProvider(plan.ProviderType.ValueString())),
 	}
-	if !plan.RunnerManagerID.IsNull() && !plan.RunnerManagerID.IsUnknown() {
+	if !plan.RunnerManagerID.IsNull() && !plan.RunnerManagerID.IsUnknown() && plan.RunnerManagerID.ValueString() != "" {
 		params.RunnerManagerID = gitpod.F(plan.RunnerManagerID.ValueString())
 	}
 	if plan.Spec != nil {
