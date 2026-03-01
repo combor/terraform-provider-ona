@@ -13,11 +13,10 @@ This file is a quick guide for AI coding agents and human contributors working o
 - Prefer the smallest safe fix; avoid refactors and unrelated cleanup.
 - Anchor each suggestion to concrete evidence
 - Avoid generic advice; make each recommendation actionable and specific
-- in the commit messages provide explanation why the chage was made
+- In commit messages, explain why the change was made.
 
 ## Validation checklist
 
 From the repo root, before finishing a change:
 
-1. Run unit tests: `go test ./...`
-
+1. Run tests: `go test ./...`
