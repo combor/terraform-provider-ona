@@ -49,7 +49,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       GITPOD_API_KEY: ${{ secrets.GITPOD_API_KEY }}
     steps:
