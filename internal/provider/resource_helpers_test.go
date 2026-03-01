@@ -25,10 +25,11 @@ func TestStringValueOrNull(t *testing.T) {
 
 func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
 	cfg := &runnerConfigModel{
-		AutoUpdate:     types.BoolUnknown(),
-		Region:         types.StringNull(),
-		ReleaseChannel: types.StringValue(string(gitpod.RunnerReleaseChannelStable)),
-		LogLevel:       types.StringUnknown(),
+		AutoUpdate:                    types.BoolUnknown(),
+		DevcontainerImageCacheEnabled: types.BoolValue(true),
+		Region:                        types.StringNull(),
+		ReleaseChannel:                types.StringValue(string(gitpod.RunnerReleaseChannelStable)),
+		LogLevel:                      types.StringUnknown(),
 		Metrics: &runnerMetricsModel{
 			Enabled:  types.BoolValue(true),
 			URL:      types.StringNull(),
@@ -40,6 +41,8 @@ func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
 	got := buildConfigParam(cfg)
 
 	assert.False(t, got.AutoUpdate.Present)
+	assert.True(t, got.DevcontainerImageCacheEnabled.Present)
+	assert.Equal(t, true, got.DevcontainerImageCacheEnabled.Value)
 	assert.False(t, got.Region.Present)
 	assert.True(t, got.ReleaseChannel.Present)
 	assert.Equal(t, gitpod.RunnerReleaseChannelStable, got.ReleaseChannel.Value)
@@ -73,11 +76,13 @@ func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
 		RunnerManagerID: "",
 		Spec: gitpod.RunnerSpec{
 			DesiredPhase: gitpod.RunnerPhaseActive,
+			Variant:      gitpod.RunnerVariantStandard,
 			Configuration: gitpod.RunnerConfiguration{
-				AutoUpdate:     true,
-				ReleaseChannel: gitpod.RunnerReleaseChannelStable,
-				LogLevel:       gitpod.LogLevelInfo,
-				Region:         "",
+				AutoUpdate:                    true,
+				DevcontainerImageCacheEnabled: true,
+				ReleaseChannel:                gitpod.RunnerReleaseChannelStable,
+				LogLevel:                      gitpod.LogLevelInfo,
+				Region:                        "",
 				Metrics: gitpod.MetricsConfiguration{
 					Enabled:  true,
 					URL:      "https://metrics.example",
@@ -101,7 +106,9 @@ func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
 	assert.True(t, got.RunnerManagerID.IsNull())
 
 	require.NotNil(t, got.Spec)
+	assert.Equal(t, string(gitpod.RunnerVariantStandard), got.Spec.Variant.ValueString())
 	require.NotNil(t, got.Spec.Configuration)
+	assert.Equal(t, true, got.Spec.Configuration.DevcontainerImageCacheEnabled.ValueBool())
 	assert.Equal(t, "us-west-2", got.Spec.Configuration.Region.ValueString())
 
 	require.NotNil(t, got.Spec.Configuration.Metrics)

@@ -1,8 +1,6 @@
 # Terraform Provider testing workflow.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
 on:
   pull_request:
     paths-ignore:
@@ -11,12 +9,10 @@ on:
     paths-ignore:
       - 'README.md'
 
-# Testing only needs permissions to read the repository contents.
 permissions:
   contents: read
 
 jobs:
-  # Ensure project builds before running testing matrix
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -28,26 +24,34 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - run: go mod download
-      - run: go build -v .
+      - run: go build -v -o terraform-provider-ona .
       - name: Run linters
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: latest
 
-
-  # Run acceptance tests in a matrix with Terraform CLI versions
   test:
-    name: 'Acceptance Tests: Terraform ${{ matrix.terraform }}'
+    name: Unit Tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # Terraform versions
-        terraform:
-          - '1.13.*'
-          - '1.14.*'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go mod download
+      - run: go test -v -cover ./...
+
+  integration:
+    name: Integration Test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push'
+    env:
+      GITPOD_API_KEY: ${{ secrets.GITPOD_API_KEY }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -56,10 +60,34 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
-          terraform_version: ${{ matrix.terraform }}
+          terraform_version: '1.14.*'
           terraform_wrapper: false
-      - run: go mod download
-      - env:
-          TF_ACC: "1"
-        run: go test -v -cover ./internal/provider/
-        timeout-minutes: 10
+      - name: Build provider
+        run: go build -o terraform-provider-ona .
+      - name: Setup dev overrides
+        run: |
+          cat > ~/.terraformrc << EOF
+          provider_installation {
+            dev_overrides {
+              "combor/ona" = "${{ github.workspace }}"
+            }
+            direct {}
+          }
+          EOF
+      - name: Terraform Apply
+        working-directory: examples
+        run: |
+          terraform apply -auto-approve \
+            -var="runner_name=tf-ci-${{ github.run_id }}" \
+            -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
+            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
+            -var="runner_region=eu-central-1"
+      - name: Terraform Destroy
+        if: always()
+        working-directory: examples
+        run: |
+          terraform destroy -auto-approve \
+            -var="runner_name=tf-ci-${{ github.run_id }}" \
+            -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
+            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
+            -var="runner_region=eu-central-1"
