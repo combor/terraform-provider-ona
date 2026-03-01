@@ -19,15 +19,13 @@ resource "ona_runner" "example" {
   runner_manager_id = var.runner_manager_id
 
   spec = {
-    desired_phase = "RUNNER_PHASE_ACTIVE"
+    variant = "RUNNER_VARIANT_STANDARD"
     configuration = {
-      region          = var.runner_region
-      auto_update     = true
-      release_channel = "RUNNER_RELEASE_CHANNEL_STABLE"
-      log_level       = "LOG_LEVEL_INFO"
-      metrics = {
-        enabled = false
-      }
+      region                           = var.runner_region
+      auto_update                      = true
+      devcontainer_image_cache_enabled = true
+      release_channel                  = "RUNNER_RELEASE_CHANNEL_STABLE"
+      log_level                        = "LOG_LEVEL_INFO"
     }
   }
 }

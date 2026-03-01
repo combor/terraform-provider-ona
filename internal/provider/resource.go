@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -42,15 +41,17 @@ type runnerModel struct {
 
 type runnerSpecModel struct {
 	DesiredPhase  types.String       `tfsdk:"desired_phase"`
+	Variant       types.String       `tfsdk:"variant"`
 	Configuration *runnerConfigModel `tfsdk:"configuration"`
 }
 
 type runnerConfigModel struct {
-	AutoUpdate     types.Bool          `tfsdk:"auto_update"`
-	Region         types.String        `tfsdk:"region"`
-	ReleaseChannel types.String        `tfsdk:"release_channel"`
-	LogLevel       types.String        `tfsdk:"log_level"`
-	Metrics        *runnerMetricsModel `tfsdk:"metrics"`
+	AutoUpdate                    types.Bool          `tfsdk:"auto_update"`
+	DevcontainerImageCacheEnabled types.Bool          `tfsdk:"devcontainer_image_cache_enabled"`
+	Region                        types.String        `tfsdk:"region"`
+	ReleaseChannel                types.String        `tfsdk:"release_channel"`
+	LogLevel                      types.String        `tfsdk:"log_level"`
+	Metrics                       *runnerMetricsModel `tfsdk:"metrics"`
 }
 
 type runnerMetricsModel struct {
@@ -93,7 +94,12 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Attributes: map[string]schema.Attribute{
 					"desired_phase": schema.StringAttribute{
 						Optional:            true,
+						Computed:            true,
 						MarkdownDescription: "Desired runner phase (e.g. `RUNNER_PHASE_ACTIVE`, `RUNNER_PHASE_INACTIVE`).",
+					},
+					"variant": schema.StringAttribute{
+						Optional:            true,
+						MarkdownDescription: "Runner variant (`RUNNER_VARIANT_STANDARD`, `RUNNER_VARIANT_ENTERPRISE`).",
 					},
 					"configuration": schema.SingleNestedAttribute{
 						Optional: true,
@@ -102,7 +108,10 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 								Optional:            true,
 								Computed:            true,
 								MarkdownDescription: "Whether the runner auto-updates.",
-								PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+							},
+							"devcontainer_image_cache_enabled": schema.BoolAttribute{
+								Optional:            true,
+								MarkdownDescription: "Whether the devcontainer build cache is enabled.",
 							},
 							"region": schema.StringAttribute{
 								Optional:            true,
@@ -267,10 +276,13 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	_, err := r.client.Runners.Delete(ctx, gitpod.RunnerDeleteParams{
+	deleteParams := gitpod.RunnerDeleteParams{
 		RunnerID: gitpod.F(state.ID.ValueString()),
-		Force:    gitpod.F(true),
-	})
+	}
+	if state.ProviderType.ValueString() != string(gitpod.RunnerProviderManaged) {
+		deleteParams.Force = gitpod.F(true)
+	}
+	_, err := r.client.Runners.Delete(ctx, deleteParams)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete runner", err.Error())
 	}
@@ -287,6 +299,9 @@ func buildSpecParam(spec *runnerSpecModel) gitpod.RunnerSpecParam {
 	if !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
 		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
 	}
+	if !spec.Variant.IsNull() && !spec.Variant.IsUnknown() {
+		p.Variant = gitpod.F(gitpod.RunnerVariant(spec.Variant.ValueString()))
+	}
 	if spec.Configuration != nil {
 		p.Configuration = gitpod.F(buildConfigParam(spec.Configuration))
 	}
@@ -297,6 +312,9 @@ func buildConfigParam(cfg *runnerConfigModel) gitpod.RunnerConfigurationParam {
 	p := gitpod.RunnerConfigurationParam{}
 	if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
 		p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
+	}
+	if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
+		p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
 	}
 	if !cfg.Region.IsNull() && !cfg.Region.IsUnknown() {
 		p.Region = gitpod.F(cfg.Region.ValueString())
@@ -346,6 +364,9 @@ func buildUpdateConfigParam(cfg *runnerConfigModel) gitpod.RunnerUpdateParamsSpe
 	if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
 		p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
 	}
+	if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
+		p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
+	}
 	if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
 		p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
 	}
@@ -391,13 +412,21 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 	// Map spec — preserve user-set values the API doesn't return
 	if prior.Spec != nil {
 		spec := &runnerSpecModel{
-			DesiredPhase: types.StringValue(string(runner.Spec.DesiredPhase)),
+			DesiredPhase: stringValueOrNull(string(runner.Spec.DesiredPhase)),
+			Variant:      stringValueOrNull(string(runner.Spec.Variant)),
 		}
 		if prior.Spec.Configuration != nil {
+			// auto_update: prefer prior state when explicitly set, as the API
+			// may ignore the value for certain runner types (e.g. managed).
+			autoUpdate := types.BoolValue(runner.Spec.Configuration.AutoUpdate)
+			if !prior.Spec.Configuration.AutoUpdate.IsNull() && !prior.Spec.Configuration.AutoUpdate.IsUnknown() {
+				autoUpdate = prior.Spec.Configuration.AutoUpdate
+			}
 			cfg := &runnerConfigModel{
-				AutoUpdate:     types.BoolValue(runner.Spec.Configuration.AutoUpdate),
-				ReleaseChannel: types.StringValue(string(runner.Spec.Configuration.ReleaseChannel)),
-				LogLevel:       types.StringValue(string(runner.Spec.Configuration.LogLevel)),
+				AutoUpdate:                    autoUpdate,
+				DevcontainerImageCacheEnabled: types.BoolValue(runner.Spec.Configuration.DevcontainerImageCacheEnabled),
+				ReleaseChannel:                types.StringValue(string(runner.Spec.Configuration.ReleaseChannel)),
+				LogLevel:                      types.StringValue(string(runner.Spec.Configuration.LogLevel)),
 			}
 			if runner.Spec.Configuration.Region != "" {
 				cfg.Region = types.StringValue(runner.Spec.Configuration.Region)
