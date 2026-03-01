@@ -1,3 +1,6 @@
+# Integration test configuration used by CI (terraform apply/destroy).
+# Documentation examples live in examples/provider/ and examples/resources/.
+
 terraform {
   required_version = ">= 1.6.0"
 
