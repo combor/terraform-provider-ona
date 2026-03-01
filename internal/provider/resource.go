@@ -32,12 +32,12 @@ func NewRunnerResource() resource.Resource {
 // Models
 
 type runnerModel struct {
-	ID              types.String       `tfsdk:"id"`
-	Name            types.String       `tfsdk:"name"`
-	ProviderType    types.String       `tfsdk:"provider_type"`
-	RunnerManagerID types.String       `tfsdk:"runner_manager_id"`
-	Spec   *runnerSpecModel `tfsdk:"spec"`
-	Status types.Object     `tfsdk:"status"`
+	ID              types.String     `tfsdk:"id"`
+	Name            types.String     `tfsdk:"name"`
+	ProviderType    types.String     `tfsdk:"provider_type"`
+	RunnerManagerID types.String     `tfsdk:"runner_manager_id"`
+	Spec            *runnerSpecModel `tfsdk:"spec"`
+	Status          types.Object     `tfsdk:"status"`
 }
 
 type runnerSpecModel struct {
@@ -46,10 +46,10 @@ type runnerSpecModel struct {
 }
 
 type runnerConfigModel struct {
-	AutoUpdate     types.Bool         `tfsdk:"auto_update"`
-	Region         types.String       `tfsdk:"region"`
-	ReleaseChannel types.String       `tfsdk:"release_channel"`
-	LogLevel       types.String       `tfsdk:"log_level"`
+	AutoUpdate     types.Bool          `tfsdk:"auto_update"`
+	Region         types.String        `tfsdk:"region"`
+	ReleaseChannel types.String        `tfsdk:"release_channel"`
+	LogLevel       types.String        `tfsdk:"log_level"`
 	Metrics        *runnerMetricsModel `tfsdk:"metrics"`
 }
 
