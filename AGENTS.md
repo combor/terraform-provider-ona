@@ -19,4 +19,5 @@ This file is a quick guide for AI coding agents and human contributors working o
 
 From the repo root, before finishing a change:
 
-1. Run tests: `go test ./...`
+1. Run `gofmt -w` on changed Go files
+2. Run tests: `go test ./...`

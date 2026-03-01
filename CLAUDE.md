@@ -26,6 +26,7 @@ go build -o terraform-provider-ona
 - Prefer small, focused changes with matching test updates
 - Don't hand-edit `dist/` artifacts unless release-related
 - Keep scope tight; avoid broad refactors
+- Always run `gofmt -w` on changed Go files before committing
 - Always run `go test ./...` before finishing
 - Prefer small, reliable tests that fail before and pass after
 - Avoid overconfident root-cause claims
