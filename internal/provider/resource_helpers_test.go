@@ -1,0 +1,116 @@
+package provider
+
+import (
+	"testing"
+
+	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestStringValueOrNull(t *testing.T) {
+	t.Run("empty string becomes null", func(t *testing.T) {
+		got := stringValueOrNull("")
+		assert.True(t, got.IsNull())
+		assert.False(t, got.IsUnknown())
+	})
+
+	t.Run("non-empty string becomes value", func(t *testing.T) {
+		got := stringValueOrNull("runner")
+		assert.False(t, got.IsNull())
+		assert.Equal(t, "runner", got.ValueString())
+	})
+}
+
+func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
+	cfg := &runnerConfigModel{
+		AutoUpdate:     types.BoolUnknown(),
+		Region:         types.StringNull(),
+		ReleaseChannel: types.StringValue(string(gitpod.RunnerReleaseChannelStable)),
+		LogLevel:       types.StringUnknown(),
+		Metrics: &runnerMetricsModel{
+			Enabled:  types.BoolValue(true),
+			URL:      types.StringNull(),
+			Username: types.StringValue("metrics-user"),
+			Password: types.StringUnknown(),
+		},
+	}
+
+	got := buildConfigParam(cfg)
+
+	assert.False(t, got.AutoUpdate.Present)
+	assert.False(t, got.Region.Present)
+	assert.True(t, got.ReleaseChannel.Present)
+	assert.Equal(t, gitpod.RunnerReleaseChannelStable, got.ReleaseChannel.Value)
+	assert.False(t, got.LogLevel.Present)
+
+	require.True(t, got.Metrics.Present)
+	assert.True(t, got.Metrics.Value.Enabled.Present)
+	assert.Equal(t, true, got.Metrics.Value.Enabled.Value)
+	assert.False(t, got.Metrics.Value.URL.Present)
+	assert.True(t, got.Metrics.Value.Username.Present)
+	assert.Equal(t, "metrics-user", got.Metrics.Value.Username.Value)
+	assert.False(t, got.Metrics.Value.Password.Present)
+}
+
+func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
+	prior := runnerModel{
+		Spec: &runnerSpecModel{
+			Configuration: &runnerConfigModel{
+				Region: types.StringValue("us-west-2"),
+				Metrics: &runnerMetricsModel{
+					Password: types.StringValue("secret"),
+				},
+			},
+		},
+	}
+
+	runner := gitpod.Runner{
+		RunnerID:        "runner-123",
+		Name:            "runner-name",
+		Provider:        gitpod.RunnerProviderAwsEc2,
+		RunnerManagerID: "",
+		Spec: gitpod.RunnerSpec{
+			DesiredPhase: gitpod.RunnerPhaseActive,
+			Configuration: gitpod.RunnerConfiguration{
+				AutoUpdate:     true,
+				ReleaseChannel: gitpod.RunnerReleaseChannelStable,
+				LogLevel:       gitpod.LogLevelInfo,
+				Region:         "",
+				Metrics: gitpod.MetricsConfiguration{
+					Enabled:  true,
+					URL:      "https://metrics.example",
+					Username: "metrics-user",
+				},
+			},
+		},
+		Status: gitpod.RunnerStatus{
+			Phase:   gitpod.RunnerPhaseDegraded,
+			Message: "degraded",
+			Version: "1.2.3",
+			Region:  "eu-central-1",
+		},
+	}
+
+	got := mapRunnerToModel(runner, prior)
+
+	assert.Equal(t, "runner-123", got.ID.ValueString())
+	assert.Equal(t, "runner-name", got.Name.ValueString())
+	assert.Equal(t, string(gitpod.RunnerProviderAwsEc2), got.ProviderType.ValueString())
+	assert.True(t, got.RunnerManagerID.IsNull())
+
+	require.NotNil(t, got.Spec)
+	require.NotNil(t, got.Spec.Configuration)
+	assert.Equal(t, "us-west-2", got.Spec.Configuration.Region.ValueString())
+
+	require.NotNil(t, got.Spec.Configuration.Metrics)
+	assert.Equal(t, "secret", got.Spec.Configuration.Metrics.Password.ValueString())
+	assert.Equal(t, "https://metrics.example", got.Spec.Configuration.Metrics.URL.ValueString())
+	assert.Equal(t, "metrics-user", got.Spec.Configuration.Metrics.Username.ValueString())
+
+	statusAttrs := got.Status.Attributes()
+	phase, ok := statusAttrs["phase"].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, string(gitpod.RunnerPhaseDegraded), phase.ValueString())
+}
