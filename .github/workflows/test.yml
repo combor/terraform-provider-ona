@@ -5,9 +5,15 @@ on:
   pull_request:
     paths-ignore:
       - 'README.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - 'LICENSE'
   push:
     paths-ignore:
       - 'README.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - 'LICENSE'
 
 permissions:
   contents: read

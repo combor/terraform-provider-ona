@@ -21,3 +21,4 @@ From the repo root, before finishing a change:
 
 1. Run `gofmt -w` on changed Go files
 2. Run tests: `go test ./...`
+3. Run CI pipeline locally: `act push -j build -j test`

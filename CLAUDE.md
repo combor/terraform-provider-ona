@@ -19,6 +19,9 @@ go test ./...
 
 # Build the provider binary
 go build -o terraform-provider-ona
+
+# Run CI pipeline locally (requires docker and act)
+act push -j build -j test
 ```
 
 ## Development Guidelines (from AGENTS.md)
