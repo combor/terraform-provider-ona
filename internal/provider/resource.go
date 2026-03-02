@@ -296,14 +296,14 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	// Poll until the runner reaches DELETED phase or disappears (404).
-	if err := r.waitForDeletion(ctx, runnerID); err != nil {
+	if err := r.waitForPhase(ctx, runnerID, gitpod.RunnerPhaseDeleted); err != nil {
 		resp.Diagnostics.AddError("Runner deletion did not complete", err.Error())
 	}
 }
 
-// waitForDeletion polls the runner status until it reaches RUNNER_PHASE_DELETED
-// or the API returns 404, confirming the underlying resource constraint is released.
-func (r *runnerResource) waitForDeletion(ctx context.Context, runnerID string) error {
+// waitForPhase polls the runner status until it reaches the expected phase
+// or the API returns 404 (treated as success for deletion).
+func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected gitpod.RunnerPhase) error {
 	const (
 		pollInterval = 2 * time.Second
 		timeout      = 2 * time.Minute
@@ -312,7 +312,7 @@ func (r *runnerResource) waitForDeletion(ctx context.Context, runnerID string) e
 	deadline := time.Now().Add(timeout)
 	for {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for runner %s to be deleted", runnerID)
+			return fmt.Errorf("timed out waiting for runner %s to reach phase %s", runnerID, expected)
 		}
 
 		getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
@@ -323,16 +323,17 @@ func (r *runnerResource) waitForDeletion(ctx context.Context, runnerID string) e
 			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 				return nil // gone
 			}
-			return fmt.Errorf("error polling runner deletion status: %w", err)
+			return fmt.Errorf("error polling runner status: %w", err)
 		}
 
 		phase := getResp.Runner.Status.Phase
-		tflog.Debug(ctx, "waiting for runner deletion", map[string]interface{}{
+		tflog.Debug(ctx, "waiting for runner phase", map[string]interface{}{
 			"runner_id": runnerID,
-			"phase":     string(phase),
+			"current":   string(phase),
+			"expected":  string(expected),
 		})
 
-		if phase == gitpod.RunnerPhaseDeleted {
+		if phase == expected {
 			return nil
 		}
 
