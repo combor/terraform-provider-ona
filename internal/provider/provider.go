@@ -81,6 +81,7 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 
 func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewProjectResource,
 		NewRunnerResource,
 	}
 }
