@@ -60,7 +60,9 @@ jobs:
 
   integration:
     name: Integration Test (Terraform ${{ matrix.terraform }})
-    needs: build
+    needs:
+      - build
+      - govulncheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
