@@ -174,3 +174,22 @@ func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T)
 	require.NotNil(t, got.Trigger.DailySchedule)
 	assert.Equal(t, int64(0), got.Trigger.DailySchedule.HourUTC.ValueInt64())
 }
+
+func TestMapProjectToModel_DoesNotPreserveRecommendedEditorsWhenPriorIsNull(t *testing.T) {
+	prior := projectModel{
+		Name:               types.StringValue("project-name"),
+		RecommendedEditors: types.MapNull(projectRecommendedEditorObjectType()),
+	}
+
+	project := gitpod.Project{
+		ID: "project-123",
+		Metadata: gitpod.ProjectMetadata{
+			Name: "project-name",
+		},
+		RecommendedEditors: gitpod.RecommendedEditors{},
+	}
+
+	got, diags := mapProjectToModel(context.Background(), project, prior)
+	require.False(t, diags.HasError())
+	assert.True(t, got.RecommendedEditors.IsNull())
+}

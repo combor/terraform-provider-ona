@@ -360,6 +360,19 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	if recommendedEditorsModel != nil {
+		createdStatePlan := plan
+		createdStatePlan.RecommendedEditors = types.MapNull(projectRecommendedEditorObjectType())
+
+		state, diags := mapProjectToModel(ctx, project, createdStatePlan)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
 		updateParams := gitpod.ProjectUpdateParams{
 			ProjectID: gitpod.F(project.ID),
 		}
@@ -372,7 +385,14 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 
 		updateResp, err := r.client.Projects.Update(ctx, updateParams)
 		if err != nil {
-			resp.Diagnostics.AddError("Failed to set recommended editors", err.Error())
+			resp.Diagnostics.AddWarning(
+				"Project created without recommended editors",
+				fmt.Sprintf(
+					"Project %s was created successfully, but setting recommended_editors failed: %s. State was saved without recommended_editors so a future plan/apply can retry reconciliation.",
+					project.ID,
+					err.Error(),
+				),
+			)
 			return
 		}
 
