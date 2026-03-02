@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -158,4 +159,18 @@ func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
 	diags = got.UsedBy.As(context.Background(), &usedBy, basetypes.ObjectAsOptions{})
 	require.False(t, diags.HasError())
 	assert.Equal(t, int64(1), usedBy.TotalSubjects.ValueInt64())
+}
+
+func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T) {
+	// Unmarshal from JSON so the SDK metadata correctly marks HourUtc as present.
+	var cfg gitpod.ProjectPrebuildConfiguration
+	raw := `{"enabled":true,"trigger":{"dailySchedule":{"hourUtc":0}}}`
+	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+
+	got := mapProjectPrebuildConfigurationToModel(cfg, nil)
+
+	require.NotNil(t, got)
+	require.NotNil(t, got.Trigger)
+	require.NotNil(t, got.Trigger.DailySchedule)
+	assert.Equal(t, int64(0), got.Trigger.DailySchedule.HourUTC.ValueInt64())
 }

@@ -798,7 +798,7 @@ func mapProjectPrebuildConfigurationToModel(cfg gitpod.ProjectPrebuildConfigurat
 		model.Executor = prior.Executor
 	}
 
-	if cfg.Trigger.DailySchedule.HourUtc != 0 {
+	if !cfg.Trigger.DailySchedule.JSON.HourUtc.IsMissing() {
 		model.Trigger = &projectPrebuildTriggerModel{
 			DailySchedule: &projectPrebuildDailyScheduleModel{
 				HourUTC: types.Int64Value(cfg.Trigger.DailySchedule.HourUtc),
@@ -859,7 +859,7 @@ func hasProjectPrebuildConfiguration(cfg gitpod.ProjectPrebuildConfiguration) bo
 		cfg.Executor.ID != "" ||
 		cfg.Executor.Principal != "" ||
 		cfg.Timeout != "" ||
-		cfg.Trigger.DailySchedule.HourUtc != 0
+		!cfg.Trigger.DailySchedule.JSON.HourUtc.IsMissing()
 }
 
 func hasInitializerContextURL(contextURL gitpod.EnvironmentInitializerSpecsContextURL) bool {
