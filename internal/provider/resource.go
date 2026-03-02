@@ -200,16 +200,16 @@ func (r *runnerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	// Read back to get computed fields
-	getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(createResp.Runner.RunnerID),
-	})
+	// Wait for the runner to reach its desired phase before reading state.
+	runnerID := createResp.Runner.RunnerID
+	desiredPhase := createResp.Runner.Spec.DesiredPhase
+	runner, err := r.waitForPhase(ctx, runnerID, desiredPhase)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to read runner after create", err.Error())
+		resp.Diagnostics.AddError("Runner did not become ready", err.Error())
 		return
 	}
 
-	state := mapRunnerToModel(getResp.Runner, plan)
+	state := mapRunnerToModel(*runner, plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -296,14 +296,14 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	// Poll until the runner reaches DELETED phase or disappears (404).
-	if err := r.waitForPhase(ctx, runnerID, gitpod.RunnerPhaseDeleted); err != nil {
+	if _, err := r.waitForPhase(ctx, runnerID, gitpod.RunnerPhaseDeleted); err != nil {
 		resp.Diagnostics.AddError("Runner deletion did not complete", err.Error())
 	}
 }
 
 // waitForPhase polls the runner status until it reaches the expected phase
 // or the API returns 404 (treated as success for deletion).
-func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected gitpod.RunnerPhase) error {
+func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected gitpod.RunnerPhase) (*gitpod.Runner, error) {
 	const (
 		pollInterval = 2 * time.Second
 		timeout      = 2 * time.Minute
@@ -312,7 +312,7 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 	deadline := time.Now().Add(timeout)
 	for {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for runner %s to reach phase %s", runnerID, expected)
+			return nil, fmt.Errorf("timed out waiting for runner %s to reach phase %s", runnerID, expected)
 		}
 
 		getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
@@ -321,9 +321,9 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 		if err != nil {
 			var apiErr *gitpod.Error
 			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
-				return nil // gone
+				return nil, nil // gone
 			}
-			return fmt.Errorf("error polling runner status: %w", err)
+			return nil, fmt.Errorf("error polling runner status: %w", err)
 		}
 
 		phase := getResp.Runner.Status.Phase
@@ -334,12 +334,12 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 		})
 
 		if phase == expected {
-			return nil
+			return &getResp.Runner, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(pollInterval):
 		}
 	}
