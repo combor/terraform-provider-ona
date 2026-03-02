@@ -523,10 +523,3 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 
 	return m
 }
-
-func stringValueOrNull(s string) types.String {
-	if s == "" {
-		return types.StringNull()
-	}
-	return types.StringValue(s)
-}
