@@ -9,7 +9,7 @@ Terraform provider for managing runners on ona.com (Gitpod runners). Uses the Ha
 - Provider registry address: `registry.terraform.io/combor/ona`
 - Provider type name: `ona`
 - Single resource: `ona_runner` (CRUD for Gitpod runners)
-- Single data source: `ona_runner` (read-only runner lookup by ID)
+- Single data source: `ona_runner` (read-only lookup by ID)
 
 ## Build & Test Commands
 

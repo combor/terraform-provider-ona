@@ -76,6 +76,7 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 	)
 
 	resp.ResourceData = client
+	resp.DataSourceData = client
 }
 
 func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -85,7 +86,9 @@ func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 }
 
 func (p *onaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewRunnerDataSource,
+	}
 }
 
 func New(version string) func() provider.Provider {
