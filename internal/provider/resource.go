@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -13,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var (
@@ -276,15 +278,69 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
+	runnerID := state.ID.ValueString()
 	deleteParams := gitpod.RunnerDeleteParams{
-		RunnerID: gitpod.F(state.ID.ValueString()),
+		RunnerID: gitpod.F(runnerID),
 	}
 	if state.ProviderType.ValueString() != string(gitpod.RunnerProviderManaged) {
 		deleteParams.Force = gitpod.F(true)
 	}
 	_, err := r.client.Runners.Delete(ctx, deleteParams)
 	if err != nil {
+		var apiErr *gitpod.Error
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+			return // already gone
+		}
 		resp.Diagnostics.AddError("Failed to delete runner", err.Error())
+		return
+	}
+
+	// Poll until the runner reaches DELETED phase or disappears (404).
+	if err := r.waitForDeletion(ctx, runnerID); err != nil {
+		resp.Diagnostics.AddError("Runner deletion did not complete", err.Error())
+	}
+}
+
+// waitForDeletion polls the runner status until it reaches RUNNER_PHASE_DELETED
+// or the API returns 404, confirming the underlying resource constraint is released.
+func (r *runnerResource) waitForDeletion(ctx context.Context, runnerID string) error {
+	const (
+		pollInterval = 2 * time.Second
+		timeout      = 2 * time.Minute
+	)
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for runner %s to be deleted", runnerID)
+		}
+
+		getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
+			RunnerID: gitpod.F(runnerID),
+		})
+		if err != nil {
+			var apiErr *gitpod.Error
+			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+				return nil // gone
+			}
+			return fmt.Errorf("error polling runner deletion status: %w", err)
+		}
+
+		phase := getResp.Runner.Status.Phase
+		tflog.Debug(ctx, "waiting for runner deletion", map[string]interface{}{
+			"runner_id": runnerID,
+			"phase":     string(phase),
+		})
+
+		if phase == gitpod.RunnerPhaseDeleted {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
