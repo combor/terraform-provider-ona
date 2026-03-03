@@ -57,9 +57,15 @@ func TestStringListValue(t *testing.T) {
 		got := stringListValue([]string{"a", "b", "c"})
 		elems := got.Elements()
 		require.Len(t, elems, 3)
-		assert.Equal(t, "a", elems[0].(types.String).ValueString())
-		assert.Equal(t, "b", elems[1].(types.String).ValueString())
-		assert.Equal(t, "c", elems[2].(types.String).ValueString())
+		v0, ok := elems[0].(types.String)
+		require.True(t, ok)
+		assert.Equal(t, "a", v0.ValueString())
+		v1, ok := elems[1].(types.String)
+		require.True(t, ok)
+		assert.Equal(t, "b", v1.ValueString())
+		v2, ok := elems[2].(types.String)
+		require.True(t, ok)
+		assert.Equal(t, "c", v2.ValueString())
 	})
 
 	t.Run("nil slice creates empty list", func(t *testing.T) {
