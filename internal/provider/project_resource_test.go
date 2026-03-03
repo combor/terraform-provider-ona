@@ -175,6 +175,133 @@ func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T)
 	assert.Equal(t, int64(0), got.Trigger.DailySchedule.HourUTC.ValueInt64())
 }
 
+func TestBuildEnvironmentInitializerParam_NilInitializer(t *testing.T) {
+	_, diags := buildEnvironmentInitializerParam(nil)
+	require.True(t, diags.HasError())
+	assert.Contains(t, diags.Errors()[0].Detail(), "at least one entry")
+}
+
+func TestBuildEnvironmentInitializerParam_EmptySpecs(t *testing.T) {
+	_, diags := buildEnvironmentInitializerParam(&projectInitializerModel{Specs: []projectInitializerSpecModel{}})
+	require.True(t, diags.HasError())
+	assert.Contains(t, diags.Errors()[0].Detail(), "at least one entry")
+}
+
+func TestBuildEnvironmentInitializerParam_SpecMissingContextURLAndGit(t *testing.T) {
+	_, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{}},
+	})
+	require.True(t, diags.HasError())
+	assert.Contains(t, diags.Errors()[0].Detail(), "context_url or git")
+}
+
+func TestBuildEnvironmentInitializerParam_GitSpecWithAllFields(t *testing.T) {
+	got, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			Git: &projectInitializerGitModel{
+				RemoteURI:         types.StringValue("https://github.com/combor/terraform-provider-ona"),
+				CloneTarget:       types.StringValue("main"),
+				TargetMode:        types.StringValue("CLONE_TARGET_MODE_REMOTE_BRANCH"),
+				CheckoutLocation:  types.StringValue("src/provider"),
+				UpstreamRemoteURI: types.StringValue("https://github.com/upstream/repo"),
+			},
+		}},
+	})
+	require.False(t, diags.HasError())
+	require.Len(t, got.Specs.Value, 1)
+
+	spec := got.Specs.Value[0]
+	assert.False(t, spec.ContextURL.Present)
+	assert.True(t, spec.Git.Present)
+	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.Git.Value.RemoteUri.Value)
+	assert.Equal(t, "main", spec.Git.Value.CloneTarget.Value)
+	assert.Equal(t, gitpod.EnvironmentInitializerSpecsGitTargetMode("CLONE_TARGET_MODE_REMOTE_BRANCH"), spec.Git.Value.TargetMode.Value)
+	assert.Equal(t, "src/provider", spec.Git.Value.CheckoutLocation.Value)
+	assert.Equal(t, "https://github.com/upstream/repo", spec.Git.Value.UpstreamRemoteUri.Value)
+}
+
+func TestBuildEnvironmentInitializerParam_GitSpecOmitsNullFields(t *testing.T) {
+	got, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			Git: &projectInitializerGitModel{
+				RemoteURI:         types.StringValue("https://github.com/combor/terraform-provider-ona"),
+				CloneTarget:       types.StringNull(),
+				TargetMode:        types.StringNull(),
+				CheckoutLocation:  types.StringNull(),
+				UpstreamRemoteURI: types.StringNull(),
+			},
+		}},
+	})
+	require.False(t, diags.HasError())
+
+	spec := got.Specs.Value[0]
+	assert.True(t, spec.Git.Value.RemoteUri.Present)
+	assert.False(t, spec.Git.Value.CloneTarget.Present)
+	assert.False(t, spec.Git.Value.TargetMode.Present)
+	assert.False(t, spec.Git.Value.CheckoutLocation.Present)
+	assert.False(t, spec.Git.Value.UpstreamRemoteUri.Present)
+}
+
+func TestBuildEnvironmentInitializerParam_ContextURLSpec(t *testing.T) {
+	got, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			ContextURL: &projectInitializerContextURLModel{
+				URL: types.StringValue("https://github.com/combor/terraform-provider-ona"),
+			},
+		}},
+	})
+	require.False(t, diags.HasError())
+	require.Len(t, got.Specs.Value, 1)
+
+	spec := got.Specs.Value[0]
+	assert.True(t, spec.ContextURL.Present)
+	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.ContextURL.Value.URL.Value)
+	assert.False(t, spec.Git.Present)
+}
+
+func TestBuildEnvironmentInitializerParam_MultipleSpecs(t *testing.T) {
+	got, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{
+			{
+				Git: &projectInitializerGitModel{
+					RemoteURI: types.StringValue("https://github.com/combor/repo-a"),
+				},
+			},
+			{
+				ContextURL: &projectInitializerContextURLModel{
+					URL: types.StringValue("https://github.com/combor/repo-b"),
+				},
+				Git: &projectInitializerGitModel{
+					RemoteURI: types.StringValue("https://github.com/combor/repo-b"),
+				},
+			},
+		},
+	})
+	require.False(t, diags.HasError())
+	require.Len(t, got.Specs.Value, 2)
+
+	assert.True(t, got.Specs.Value[0].Git.Present)
+	assert.False(t, got.Specs.Value[0].ContextURL.Present)
+
+	assert.True(t, got.Specs.Value[1].Git.Present)
+	assert.True(t, got.Specs.Value[1].ContextURL.Present)
+}
+
+func TestBuildEnvironmentInitializerParam_MixedValidAndInvalidSpecs(t *testing.T) {
+	_, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{
+			{
+				Git: &projectInitializerGitModel{
+					RemoteURI: types.StringValue("https://github.com/combor/repo-a"),
+				},
+			},
+			{}, // invalid: no context_url or git
+		},
+	})
+	require.True(t, diags.HasError())
+	assert.Contains(t, diags.Errors()[0].Detail(), "specs[1]")
+}
+
 func TestMapProjectToModel_DoesNotPreserveRecommendedEditorsWhenPriorIsNull(t *testing.T) {
 	prior := projectModel{
 		Name:               types.StringValue("project-name"),
