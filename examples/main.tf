@@ -36,3 +36,25 @@ resource "ona_runner" "example" {
 data "ona_runner" "example" {
   id = ona_runner.example.id
 }
+
+resource "ona_project" "example" {
+  name = var.project_name
+
+  initializer = {
+    specs = [
+      {
+        git = {
+          remote_uri   = var.project_git_remote_uri
+          clone_target = "main"
+          target_mode  = "CLONE_TARGET_MODE_REMOTE_BRANCH"
+        }
+      }
+    ]
+  }
+
+  recommended_editors = {
+    vscode = {
+      versions = []
+    }
+  }
+}

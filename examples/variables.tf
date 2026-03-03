@@ -32,3 +32,14 @@ variable "runner_region" {
   type        = string
   default     = "eu-central-1"
 }
+
+variable "project_name" {
+  description = "Project name. Use a unique value in CI."
+  type        = string
+}
+
+variable "project_git_remote_uri" {
+  description = "Git remote URI for the project initializer."
+  type        = string
+  default     = "https://github.com/combor/terraform-provider-ona"
+}

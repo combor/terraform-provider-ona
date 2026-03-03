@@ -103,7 +103,8 @@ jobs:
             -var="runner_name=tf-ci-${{ github.run_id }}" \
             -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
             -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
-            -var="runner_region=eu-central-1"
+            -var="runner_region=eu-central-1" \
+            -var="project_name=tf-ci-proj-${{ github.run_id }}"
       - name: Terraform Destroy
         if: always()
         working-directory: examples
@@ -112,4 +113,5 @@ jobs:
             -var="runner_name=tf-ci-${{ github.run_id }}" \
             -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
             -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
-            -var="runner_region=eu-central-1"
+            -var="runner_region=eu-central-1" \
+            -var="project_name=tf-ci-proj-${{ github.run_id }}"
