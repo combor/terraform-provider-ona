@@ -58,3 +58,7 @@ resource "ona_project" "example" {
     }
   }
 }
+
+data "ona_project" "example" {
+  id = ona_project.example.id
+}

@@ -4,4 +4,5 @@ dist/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
-gitpod-sdk-go/
+.cache/
+.terraformrc.local

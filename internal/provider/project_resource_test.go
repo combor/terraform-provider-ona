@@ -201,7 +201,7 @@ func TestBuildEnvironmentInitializerParam_GitSpecWithAllFields(t *testing.T) {
 			Git: &projectInitializerGitModel{
 				RemoteURI:         types.StringValue("https://github.com/combor/terraform-provider-ona"),
 				CloneTarget:       types.StringValue("main"),
-				TargetMode:        types.StringValue("CLONE_TARGET_MODE_REMOTE_BRANCH"),
+				TargetMode:        types.StringValue(string(gitpod.EnvironmentInitializerSpecsGitTargetModeCloneTargetModeRemoteBranch)),
 				CheckoutLocation:  types.StringValue("src/provider"),
 				UpstreamRemoteURI: types.StringValue("https://github.com/upstream/repo"),
 			},
