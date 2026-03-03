@@ -2,6 +2,7 @@ package provider
 
 import (
 	"testing"
+	"time"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -20,6 +21,64 @@ func TestStringValueOrNull(t *testing.T) {
 		got := stringValueOrNull("runner")
 		assert.False(t, got.IsNull())
 		assert.Equal(t, "runner", got.ValueString())
+	})
+}
+
+func TestMergeStringWithPrior(t *testing.T) {
+	t.Run("non-empty current wins over prior", func(t *testing.T) {
+		got := mergeStringWithPrior("new-value", types.StringValue("old-value"))
+		assert.Equal(t, "new-value", got.ValueString())
+	})
+
+	t.Run("empty current falls back to non-null prior", func(t *testing.T) {
+		got := mergeStringWithPrior("", types.StringValue("prior-value"))
+		assert.Equal(t, "prior-value", got.ValueString())
+	})
+
+	t.Run("empty current returns null when prior is null", func(t *testing.T) {
+		got := mergeStringWithPrior("", types.StringNull())
+		assert.True(t, got.IsNull())
+	})
+
+	t.Run("empty current returns null when prior is unknown", func(t *testing.T) {
+		got := mergeStringWithPrior("", types.StringUnknown())
+		assert.True(t, got.IsNull())
+	})
+}
+
+func TestStringListValue(t *testing.T) {
+	t.Run("empty slice creates empty list", func(t *testing.T) {
+		got := stringListValue([]string{})
+		assert.False(t, got.IsNull())
+		assert.Empty(t, got.Elements())
+	})
+
+	t.Run("populated slice creates correct elements", func(t *testing.T) {
+		got := stringListValue([]string{"a", "b", "c"})
+		elems := got.Elements()
+		require.Len(t, elems, 3)
+		assert.Equal(t, "a", elems[0].(types.String).ValueString())
+		assert.Equal(t, "b", elems[1].(types.String).ValueString())
+		assert.Equal(t, "c", elems[2].(types.String).ValueString())
+	})
+
+	t.Run("nil slice creates empty list", func(t *testing.T) {
+		got := stringListValue(nil)
+		assert.False(t, got.IsNull())
+		assert.Empty(t, got.Elements())
+	})
+}
+
+func TestTimeValueOrNull(t *testing.T) {
+	t.Run("zero time returns null", func(t *testing.T) {
+		got := timeValueOrNull(time.Time{})
+		assert.True(t, got.IsNull())
+	})
+
+	t.Run("non-zero time returns RFC3339Nano string", func(t *testing.T) {
+		ts := time.Date(2026, time.March, 2, 15, 4, 5, 123456789, time.UTC)
+		got := timeValueOrNull(ts)
+		assert.Equal(t, "2026-03-02T15:04:05.123456789Z", got.ValueString())
 	})
 }
 
