@@ -1,11 +1,23 @@
 # Terraform Provider Ona
 
+[![CI](https://github.com/combor/terraform-provider-ona/actions/workflows/ci.yml/badge.svg)](https://github.com/combor/terraform-provider-ona/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/combor/terraform-provider-ona?display_name=tag)](https://github.com/combor/terraform-provider-ona/releases)
+
 Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.com](https://ona.com).
 
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
 - [Go](https://golang.org/doc/install) >= 1.26 (for building from source)
+
+## Quick Links
+
+- [Terraform Registry](https://registry.terraform.io/providers/combor/ona/latest)
+- [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
+- [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
+- [Project Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md)
+- [Runner Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md)
+- [Integration Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf)
 
 ## Supported Types
 
@@ -19,11 +31,26 @@ Data sources:
 - `ona_project`
 - `ona_runner`
 
+## Using the Provider
+
+```hcl
+terraform {
+  required_providers {
+    ona = {
+      source  = "combor/ona"
+      version = ">= 0.1.0"
+    }
+  }
+}
+
+provider "ona" {
+  api_key = var.ona_api_key
+}
+```
+
 ## Example
 
 ```hcl
-provider "ona" {}
-
 resource "ona_project" "example" {
   name = "terraform-provider-ona"
 
@@ -89,3 +116,13 @@ provider_installation {
   direct {}
 }
 ```
+
+## Contributing
+
+Bug reports and feature requests should go to [GitHub Issues](https://github.com/combor/terraform-provider-ona/issues). Code changes should be proposed through [pull requests](https://github.com/combor/terraform-provider-ona/pulls).
+
+Before opening a pull request, run:
+
+- `gofmt -w` on changed Go files
+- `go test ./...`
+- `act push -j build -j test -s GITPOD_API_KEY=<your-key>`
