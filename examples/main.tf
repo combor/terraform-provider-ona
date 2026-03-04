@@ -41,6 +41,8 @@ data "ona_runner_environment_classes" "example" {
   runner_id = ona_runner.example.id
 }
 
+data "ona_authenticated_identity" "current" {}
+
 resource "ona_project" "example" {
   name = var.project_name
 
@@ -57,7 +59,12 @@ resource "ona_project" "example" {
   }
 
   prebuild_configuration = {
+    enabled               = true
     environment_class_ids = [for environment_class in data.ona_runner_environment_classes.example.environment_classes : environment_class.id]
+    executor = {
+      id        = data.ona_authenticated_identity.current.id
+      principal = data.ona_authenticated_identity.current.principal
+    }
   }
 
   recommended_editors = {

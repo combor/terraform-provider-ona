@@ -1,0 +1,86 @@
+package provider
+
+import (
+	"context"
+	"fmt"
+
+	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+var _ datasource.DataSource = &authenticatedIdentityDataSource{}
+
+type authenticatedIdentityDataSource struct {
+	client *gitpod.Client
+}
+
+func NewAuthenticatedIdentityDataSource() datasource.DataSource {
+	return &authenticatedIdentityDataSource{}
+}
+
+func (d *authenticatedIdentityDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_authenticated_identity"
+}
+
+func (d *authenticatedIdentityDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		MarkdownDescription: "Look up the currently authenticated Gitpod identity.",
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Authenticated subject ID.",
+			},
+			"principal": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Authenticated subject principal.",
+			},
+			"organization_id": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Organization ID associated with the authenticated identity.",
+			},
+		},
+	}
+}
+
+func (d *authenticatedIdentityDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(*gitpod.Client)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected provider data type",
+			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
+		return
+	}
+
+	d.client = client
+}
+
+func (d *authenticatedIdentityDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
+	getResp, err := d.client.Identity.GetAuthenticatedIdentity(ctx, gitpod.IdentityGetAuthenticatedIdentityParams{})
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read authenticated identity", err.Error())
+		return
+	}
+
+	state := mapAuthenticatedIdentityToDataSourceModel(getResp.OrganizationID, getResp.Subject)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func mapAuthenticatedIdentityToDataSourceModel(organizationID string, subject shared.Subject) authenticatedIdentityDataSourceModel {
+	return authenticatedIdentityDataSourceModel{
+		ID:             stringValueOrNull(subject.ID),
+		Principal:      stringValueOrNull(string(subject.Principal)),
+		OrganizationID: stringValueOrNull(organizationID),
+	}
+}
+
+type authenticatedIdentityDataSourceModel struct {
+	ID             types.String `tfsdk:"id"`
+	Principal      types.String `tfsdk:"principal"`
+	OrganizationID types.String `tfsdk:"organization_id"`
+}
