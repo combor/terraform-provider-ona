@@ -15,8 +15,10 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 - [Terraform Registry](https://registry.terraform.io/providers/combor/ona/latest)
 - [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
 - [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
+- [Authenticated Identity Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md)
 - [Project Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md)
 - [Runner Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md)
+- [Runner Environment Classes Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md)
 - [Integration Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf)
 
 ## Supported Types
@@ -28,8 +30,10 @@ Resources:
 
 Data sources:
 
+- `ona_authenticated_identity`
 - `ona_project`
 - `ona_runner`
+- `ona_runner_environment_classes`
 
 ## Using the Provider
 
@@ -51,20 +55,6 @@ provider "ona" {
 ## Example
 
 ```hcl
-resource "ona_project" "example" {
-  name = "terraform-provider-ona"
-
-  initializer = {
-    specs = [
-      {
-        git = {
-          remote_uri = "https://github.com/combor/terraform-provider-ona"
-        }
-      }
-    ]
-  }
-}
-
 resource "ona_runner" "example" {
   name              = "my-runner"
   provider_type     = "RUNNER_PROVIDER_MANAGED"
@@ -82,6 +72,38 @@ resource "ona_runner" "example" {
   }
 }
 
+data "ona_runner_environment_classes" "example" {
+  runner_id = ona_runner.example.id
+}
+
+data "ona_authenticated_identity" "current" {}
+
+resource "ona_project" "example" {
+  name = "terraform-provider-ona"
+
+  initializer = {
+    specs = [
+      {
+        git = {
+          remote_uri = "https://github.com/combor/terraform-provider-ona"
+        }
+      }
+    ]
+  }
+
+  prebuild_configuration = {
+    enabled = true
+    environment_class_ids = [
+      for environment_class in data.ona_runner_environment_classes.example.environment_classes :
+      environment_class.id
+    ]
+    executor = {
+      id        = data.ona_authenticated_identity.current.id
+      principal = data.ona_authenticated_identity.current.principal
+    }
+  }
+}
+
 data "ona_project" "example" {
   id = ona_project.example.id
 }
@@ -91,7 +113,7 @@ data "ona_runner" "example" {
 }
 ```
 
-See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration and [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), and [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md) for the generated schema docs.
+See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration and [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/authenticated_identity.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md), and [docs/data-sources/runner_environment_classes.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md) for the generated schema docs.
 
 ## Development
 
