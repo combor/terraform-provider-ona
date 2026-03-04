@@ -37,6 +37,10 @@ data "ona_runner" "example" {
   id = ona_runner.example.id
 }
 
+data "ona_runner_environment_classes" "example" {
+  runner_id = ona_runner.example.id
+}
+
 resource "ona_project" "example" {
   name = var.project_name
 
@@ -50,6 +54,10 @@ resource "ona_project" "example" {
         }
       }
     ]
+  }
+
+  prebuild_configuration = {
+    environment_class_ids = [for environment_class in data.ona_runner_environment_classes.example.environment_classes : environment_class.id]
   }
 
   recommended_editors = {

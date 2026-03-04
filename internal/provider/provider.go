@@ -89,6 +89,7 @@ func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 func (p *onaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewProjectDataSource,
+		NewRunnerEnvironmentClassesDataSource,
 		NewRunnerDataSource,
 	}
 }
