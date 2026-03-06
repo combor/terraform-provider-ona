@@ -18,6 +18,8 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 - [Authenticated Identity Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md)
 - [Project Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md)
 - [Runner Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md)
+- [Group Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/group.md)
+- [Groups Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/groups.md)
 - [Runner Environment Classes Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md)
 - [Integration Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf)
 
@@ -31,6 +33,8 @@ Resources:
 Data sources:
 
 - `ona_authenticated_identity`
+- `ona_group`
+- `ona_groups`
 - `ona_project`
 - `ona_runner`
 - `ona_runner_environment_classes`
@@ -113,7 +117,7 @@ data "ona_runner" "example" {
 }
 ```
 
-See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration and [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/authenticated_identity.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md), and [docs/data-sources/runner_environment_classes.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md) for the generated schema docs.
+See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration and [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/authenticated_identity.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md), [docs/data-sources/group.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/group.md), [docs/data-sources/groups.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/groups.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md), and [docs/data-sources/runner_environment_classes.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md) for the generated schema docs.
 
 ## Development
 
