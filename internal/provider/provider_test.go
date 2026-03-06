@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"math"
 	"os"
 	"testing"
 
@@ -35,4 +36,23 @@ func TestProviderSchema_ExposesRetryAndTimeoutAttributes(t *testing.T) {
 	requestTimeout, ok := resp.Schema.Attributes["request_timeout"]
 	require.True(t, ok)
 	assert.True(t, requestTimeout.IsOptional())
+}
+
+func TestInt64ToIntChecked(t *testing.T) {
+	t.Run("accepts max value", func(t *testing.T) {
+		got, err := int64ToIntChecked(7, 7)
+		require.NoError(t, err)
+		assert.Equal(t, 7, got)
+	})
+
+	t.Run("rejects value above max", func(t *testing.T) {
+		_, err := int64ToIntChecked(8, 7)
+		require.Error(t, err)
+		assert.EqualError(t, err, "too large for this runtime (max 7)")
+	})
+}
+
+func TestMaxRuntimeInt64(t *testing.T) {
+	assert.Greater(t, maxRuntimeInt64(), int64(0))
+	assert.LessOrEqual(t, maxRuntimeInt64(), int64(math.MaxInt64))
 }

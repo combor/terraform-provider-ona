@@ -29,6 +29,18 @@ type onaProviderModel struct {
 	RequestTimeout types.String `tfsdk:"request_timeout"`
 }
 
+func maxRuntimeInt64() int64 {
+	return int64(^uint(0) >> 1)
+}
+
+func int64ToIntChecked(value int64, maxValue int64) (int, error) {
+	if value > maxValue {
+		return 0, fmt.Errorf("too large for this runtime (max %d)", maxValue)
+	}
+
+	return int(value), nil
+}
+
 func (p *onaProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "ona"
 	resp.Version = p.version
@@ -105,7 +117,16 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		clientOptions = append(clientOptions, option.WithMaxRetries(int(maxRetries)))
+		maxRetriesOption, err := int64ToIntChecked(maxRetries, maxRuntimeInt64())
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Invalid max_retries",
+				fmt.Sprintf("Provider attribute max_retries is %s.", err.Error()),
+			)
+			return
+		}
+
+		clientOptions = append(clientOptions, option.WithMaxRetries(maxRetriesOption))
 	}
 
 	if !config.RequestTimeout.IsNull() {
