@@ -105,15 +105,6 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		maxInt := int64(^uint(0) >> 1)
-		if maxRetries > maxInt {
-			resp.Diagnostics.AddError(
-				"Invalid max_retries",
-				fmt.Sprintf("Provider attribute max_retries is too large for this runtime (max %d).", maxInt),
-			)
-			return
-		}
-
 		clientOptions = append(clientOptions, option.WithMaxRetries(int(maxRetries)))
 	}
 

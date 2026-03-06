@@ -11,7 +11,7 @@ import (
 )
 
 func TestMapGroupsToDataSourceModel_MapsAndSortsGroups(t *testing.T) {
-	got := mapGroupsToDataSourceModel(nil, []gitpod.Group{
+	got := mapGroupsToDataSourceModel([]gitpod.Group{
 		{
 			ID:             "group-b",
 			Name:           "Backend",
@@ -36,7 +36,6 @@ func TestMapGroupsToDataSourceModel_MapsAndSortsGroups(t *testing.T) {
 		},
 	})
 
-	assert.Empty(t, got.Filters)
 	require.Len(t, got.Groups, 2)
 
 	assert.Equal(t, "group-a", got.Groups[0].ID.ValueString())
@@ -54,13 +53,12 @@ func TestMapGroupsToDataSourceModel_MapsAndSortsGroups(t *testing.T) {
 }
 
 func TestMapGroupsToDataSourceModel_EmptyList(t *testing.T) {
-	got := mapGroupsToDataSourceModel(nil, []gitpod.Group{})
-	assert.Empty(t, got.Filters)
+	got := mapGroupsToDataSourceModel([]gitpod.Group{})
 	assert.Empty(t, got.Groups)
 }
 
 func TestMapGroupsToDataSourceModel_EmptyOptionalFields(t *testing.T) {
-	got := mapGroupsToDataSourceModel(nil, []gitpod.Group{
+	got := mapGroupsToDataSourceModel([]gitpod.Group{
 		{
 			ID: "group-1",
 		},

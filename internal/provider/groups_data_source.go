@@ -143,7 +143,8 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	state := mapGroupsToDataSourceModel(config.Filters, groups)
+	state := mapGroupsToDataSourceModel(groups)
+	state.Filters = config.Filters
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -171,14 +172,13 @@ func matchesGroupFilters(group gitpod.Group, filters []groupsFilterModel) bool {
 	return true
 }
 
-func mapGroupsToDataSourceModel(filters []groupsFilterModel, groups []gitpod.Group) groupsDataSourceModel {
+func mapGroupsToDataSourceModel(groups []gitpod.Group) groupsDataSourceModel {
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].ID < groups[j].ID
 	})
 
 	state := groupsDataSourceModel{
-		Filters: filters,
-		Groups:  make([]groupDataSourceModel, 0, len(groups)),
+		Groups: make([]groupDataSourceModel, 0, len(groups)),
 	}
 
 	for _, group := range groups {
