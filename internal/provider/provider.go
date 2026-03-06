@@ -90,6 +90,7 @@ func (p *onaProvider) DataSources(_ context.Context) []func() datasource.DataSou
 	return []func() datasource.DataSource{
 		NewAuthenticatedIdentityDataSource,
 		NewGroupDataSource,
+		NewGroupsDataSource,
 		NewProjectDataSource,
 		NewRunnerEnvironmentClassesDataSource,
 		NewRunnerDataSource,
