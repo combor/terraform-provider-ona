@@ -3,17 +3,21 @@ name: CI
 
 on:
   pull_request:
-    paths-ignore:
-      - 'README.md'
-      - 'CLAUDE.md'
-      - 'AGENTS.md'
-      - 'LICENSE'
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/ci.yml'
+      - '.goreleaser.yml'
+      - 'examples/**'
   push:
-    paths-ignore:
-      - 'README.md'
-      - 'CLAUDE.md'
-      - 'AGENTS.md'
-      - 'LICENSE'
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/ci.yml'
+      - '.goreleaser.yml'
+      - 'examples/**'
 
 permissions:
   contents: read
