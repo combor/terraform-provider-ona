@@ -178,6 +178,7 @@ func (p *onaProvider) DataSources(_ context.Context) []func() datasource.DataSou
 		NewProjectDataSource,
 		NewRunnerEnvironmentClassesDataSource,
 		NewRunnerDataSource,
+		NewRunnersDataSource,
 	}
 }
 

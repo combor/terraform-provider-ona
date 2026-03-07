@@ -7,7 +7,7 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 
 ## Requirements
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.6.0
+- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.7.0
 - [Go](https://golang.org/doc/install) >= 1.26 (for building from source)
 
 ## Quick Links

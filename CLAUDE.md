@@ -38,3 +38,4 @@ act push -j build -j test
 - Anchor each suggestion to concrete evidence
 - Avoid generic advice; make each recommendation actionable and specific
 - in the commit messages provide explanation why the chage was made
+- When a request is ambiguous, ask for clarification instead of guessing. Do not change your answer based on reactions — either stand by your reasoning or honestly say you are unsure.

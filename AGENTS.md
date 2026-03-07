@@ -14,6 +14,7 @@ This file is a quick guide for AI coding agents and human contributors working o
 - Anchor each suggestion to concrete evidence
 - Avoid generic advice; make each recommendation actionable and specific
 - In commit messages, explain why the change was made.
+- When a request is ambiguous, ask for clarification instead of guessing. Do not change your answer based on reactions — either stand by your reasoning or honestly say you are unsure.
 
 ## Validation checklist
 
