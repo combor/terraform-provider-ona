@@ -58,11 +58,13 @@ provider "ona" {
 
 ## Example
 
+To find your runner manager ID, go to [ona.com](https://ona.com) → **Settings** → **Runners**, click the **⋯** menu on any managed runner, and select **Copy runner manager ID**.
+
 ```hcl
 resource "ona_runner" "example" {
   name              = "my-runner"
   provider_type     = "RUNNER_PROVIDER_MANAGED"
-  runner_manager_id = "<your-runner-manager-id>"
+  runner_manager_id = "<your-runner-manager-id>" # see above for how to find this
 
   spec = {
     variant = "RUNNER_VARIANT_STANDARD"

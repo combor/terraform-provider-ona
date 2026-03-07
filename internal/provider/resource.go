@@ -88,7 +88,7 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"runner_manager_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Runner manager ID. Required for managed runners.",
+				MarkdownDescription: "Runner manager ID. Required for managed runners. Find it in [ona.com](https://ona.com) → Settings → Runners → ⋯ → Copy runner manager ID.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"spec": schema.SingleNestedAttribute{

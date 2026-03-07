@@ -1,7 +1,7 @@
 resource "ona_runner" "example" {
   name              = "my-runner"
   provider_type     = "RUNNER_PROVIDER_MANAGED"
-  runner_manager_id = "<your-runner-manager-id>"
+  runner_manager_id = "<your-runner-manager-id>" # ona.com → Settings → Runners → ⋯ → Copy runner manager ID
 
   spec = {
     variant = "RUNNER_VARIANT_STANDARD"
