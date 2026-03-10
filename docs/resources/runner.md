@@ -41,7 +41,7 @@ resource "ona_runner" "example" {
 
 ### Optional
 
-- `runner_manager_id` (String) Runner manager ID. Required for managed runners.
+- `runner_manager_id` (String) Runner manager ID. Required for managed runners. Find it in [ona.com](https://ona.com) → Settings → Runners → ⋯ → Copy runner manager ID.
 - `spec` (Attributes) (see [below for nested schema](#nestedatt--spec))
 
 ### Read-Only

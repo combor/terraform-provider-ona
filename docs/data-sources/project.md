@@ -30,12 +30,12 @@ data "ona_project" "example" {
 - `automations_file_path` (String) Path to the automations file relative to the repository root.
 - `desired_phase` (String) Desired lifecycle phase of the project.
 - `devcontainer_file_path` (String) Path to the devcontainer file relative to the repository root.
-- `name` (String) Human-readable project name.
-- `technical_description` (String) Detailed technical description of the project.
 - `initializer` (Attributes) Defines how the project content is initialized. (see [below for nested schema](#nestedatt--initializer))
 - `metadata` (Attributes) Project metadata returned by the API. (see [below for nested schema](#nestedatt--metadata))
+- `name` (String) Human-readable project name.
 - `prebuild_configuration` (Attributes) Prebuild configuration for the project. (see [below for nested schema](#nestedatt--prebuild_configuration))
 - `recommended_editors` (Attributes Map) Recommended editors keyed by editor alias. (see [below for nested schema](#nestedatt--recommended_editors))
+- `technical_description` (String) Detailed technical description of the project.
 - `used_by` (Attributes) Summary of recent project usage. (see [below for nested schema](#nestedatt--used_by))
 
 <a id="nestedatt--initializer"></a>
@@ -60,6 +60,7 @@ Read-Only:
 
 - `url` (String) Source URL for the context.
 
+
 <a id="nestedatt--initializer--specs--git"></a>
 ### Nested Schema for `initializer.specs.git`
 
@@ -71,13 +72,37 @@ Read-Only:
 - `target_mode` (String) Git clone target mode.
 - `upstream_remote_uri` (String) Upstream remote URI for fork-based repositories.
 
+
+
+
+<a id="nestedatt--metadata"></a>
+### Nested Schema for `metadata`
+
+Read-Only:
+
+- `created_at` (String)
+- `creator` (Attributes) (see [below for nested schema](#nestedatt--metadata--creator))
+- `name` (String)
+- `organization_id` (String)
+- `updated_at` (String)
+
+<a id="nestedatt--metadata--creator"></a>
+### Nested Schema for `metadata.creator`
+
+Read-Only:
+
+- `id` (String)
+- `principal` (String)
+
+
+
 <a id="nestedatt--prebuild_configuration"></a>
 ### Nested Schema for `prebuild_configuration`
 
 Read-Only:
 
-- `enabled` (Boolean) Whether prebuilds are enabled.
 - `enable_jetbrains_warmup` (Boolean) Whether JetBrains warmup runs during prebuilds.
+- `enabled` (Boolean) Whether prebuilds are enabled.
 - `environment_class_ids` (List of String) Environment class IDs that should receive prebuilds.
 - `executor` (Attributes) Subject whose SCM credentials are used for prebuilds. (see [below for nested schema](#nestedatt--prebuild_configuration--executor))
 - `timeout` (String) Maximum prebuild duration, such as `3600s`.
@@ -90,6 +115,7 @@ Read-Only:
 
 - `id` (String) Executor subject ID.
 - `principal` (String) Executor principal.
+
 
 <a id="nestedatt--prebuild_configuration--trigger"></a>
 ### Nested Schema for `prebuild_configuration.trigger`
@@ -105,6 +131,9 @@ Read-Only:
 
 - `hour_utc` (Number) UTC hour (0-23) for the daily prebuild trigger.
 
+
+
+
 <a id="nestedatt--recommended_editors"></a>
 ### Nested Schema for `recommended_editors`
 
@@ -112,32 +141,14 @@ Read-Only:
 
 - `versions` (List of String) Recommended versions. Use an empty list to recommend all available versions.
 
-<a id="nestedatt--metadata"></a>
-### Nested Schema for `metadata`
-
-Read-Only:
-
-- `created_at` (String)
-- `name` (String)
-- `organization_id` (String)
-- `updated_at` (String)
-- `creator` (Attributes) (see [below for nested schema](#nestedatt--metadata--creator))
-
-<a id="nestedatt--metadata--creator"></a>
-### Nested Schema for `metadata.creator`
-
-Read-Only:
-
-- `id` (String)
-- `principal` (String)
 
 <a id="nestedatt--used_by"></a>
 ### Nested Schema for `used_by`
 
 Read-Only:
 
-- `total_subjects` (Number)
 - `subjects` (Attributes List) (see [below for nested schema](#nestedatt--used_by--subjects))
+- `total_subjects` (Number)
 
 <a id="nestedatt--used_by--subjects"></a>
 ### Nested Schema for `used_by.subjects`

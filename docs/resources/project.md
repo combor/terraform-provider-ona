@@ -99,6 +99,7 @@ Required:
 
 - `url` (String) Source URL for the context.
 
+
 <a id="nestedatt--initializer--specs--git"></a>
 ### Nested Schema for `initializer.specs.git`
 
@@ -113,13 +114,16 @@ Optional:
 - `target_mode` (String) Git clone target mode.
 - `upstream_remote_uri` (String) Upstream remote URI for fork-based repositories.
 
+
+
+
 <a id="nestedatt--prebuild_configuration"></a>
 ### Nested Schema for `prebuild_configuration`
 
 Optional:
 
-- `enabled` (Boolean) Whether prebuilds are enabled.
 - `enable_jetbrains_warmup` (Boolean) Whether JetBrains warmup runs during prebuilds.
+- `enabled` (Boolean) Whether prebuilds are enabled.
 - `environment_class_ids` (List of String) Environment class IDs that should receive prebuilds.
 - `executor` (Attributes) Subject whose SCM credentials are used for prebuilds. (see [below for nested schema](#nestedatt--prebuild_configuration--executor))
 - `timeout` (String) Maximum prebuild duration, such as `3600s`.
@@ -132,6 +136,7 @@ Required:
 
 - `id` (String) Executor subject ID.
 - `principal` (String) Executor principal.
+
 
 <a id="nestedatt--prebuild_configuration--trigger"></a>
 ### Nested Schema for `prebuild_configuration.trigger`
@@ -147,6 +152,9 @@ Required:
 
 - `hour_utc` (Number) UTC hour (0-23) for the daily prebuild trigger.
 
+
+
+
 <a id="nestedatt--recommended_editors"></a>
 ### Nested Schema for `recommended_editors`
 
@@ -154,16 +162,17 @@ Required:
 
 - `versions` (List of String) Recommended versions. Use an empty list to recommend all available versions.
 
+
 <a id="nestedatt--metadata"></a>
 ### Nested Schema for `metadata`
 
 Read-Only:
 
 - `created_at` (String)
+- `creator` (Attributes) (see [below for nested schema](#nestedatt--metadata--creator))
 - `name` (String)
 - `organization_id` (String)
 - `updated_at` (String)
-- `creator` (Attributes) (see [below for nested schema](#nestedatt--metadata--creator))
 
 <a id="nestedatt--metadata--creator"></a>
 ### Nested Schema for `metadata.creator`
@@ -173,13 +182,15 @@ Read-Only:
 - `id` (String)
 - `principal` (String)
 
+
+
 <a id="nestedatt--used_by"></a>
 ### Nested Schema for `used_by`
 
 Read-Only:
 
-- `total_subjects` (Number)
 - `subjects` (Attributes List) (see [below for nested schema](#nestedatt--used_by--subjects))
+- `total_subjects` (Number)
 
 <a id="nestedatt--used_by--subjects"></a>
 ### Nested Schema for `used_by.subjects`
@@ -192,6 +203,8 @@ Read-Only:
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 terraform import ona_project.example <project-id>

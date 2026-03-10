@@ -34,9 +34,9 @@ data "ona_runner_environment_classes" "example" {
 
 Read-Only:
 
-- `id` (String) Environment class ID.
-- `display_name` (String) Human-readable environment class name.
-- `description` (String) Human-readable environment class description.
 - `configuration` (Map of String) Configuration values keyed by configuration name.
+- `description` (String) Human-readable environment class description.
+- `display_name` (String) Human-readable environment class name.
 - `enabled` (Boolean) Whether the environment class can be used to create new environments.
+- `id` (String) Environment class ID.
 - `runner_id` (String) Runner ID this environment class belongs to.

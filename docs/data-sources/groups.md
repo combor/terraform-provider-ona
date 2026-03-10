@@ -32,7 +32,7 @@ data "ona_groups" "engineering" {
 
 ### Read-Only
 
-- `groups` (List of Object) Groups in the organization. (see [below for nested schema](#nestedatt--groups))
+- `groups` (Attributes List) Groups in the organization. (see [below for nested schema](#nestedatt--groups))
 
 <a id="nestedblock--filter"></a>
 ### Nested Schema for `filter`
@@ -41,6 +41,7 @@ Required:
 
 - `name` (String) Name of the field to filter by.
 - `values` (List of String) Values to match against. A group matches if the field equals any of the values.
+
 
 <a id="nestedatt--groups"></a>
 ### Nested Schema for `groups`
