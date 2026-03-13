@@ -327,7 +327,7 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 		}
 
 		phase := getResp.Runner.Status.Phase
-		tflog.Debug(ctx, "waiting for runner phase", map[string]interface{}{
+		tflog.Debug(ctx, "waiting for runner phase", map[string]any{
 			"runner_id": runnerID,
 			"current":   string(phase),
 			"expected":  string(expected),
