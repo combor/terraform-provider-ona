@@ -157,10 +157,12 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 									Attributes: map[string]schema.Attribute{
 										"checkout_location": schema.StringAttribute{
 											Optional:            true,
+											Computed:            true,
 											MarkdownDescription: "Relative checkout path inside the environment.",
 										},
 										"clone_target": schema.StringAttribute{
 											Optional:            true,
+											Computed:            true,
 											MarkdownDescription: "Clone target interpreted according to `target_mode`.",
 										},
 										"remote_uri": schema.StringAttribute{
@@ -169,10 +171,12 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 										},
 										"target_mode": schema.StringAttribute{
 											Optional:            true,
+											Computed:            true,
 											MarkdownDescription: "Git clone target mode.",
 										},
 										"upstream_remote_uri": schema.StringAttribute{
 											Optional:            true,
+											Computed:            true,
 											MarkdownDescription: "Upstream remote URI for fork-based repositories.",
 										},
 									},
