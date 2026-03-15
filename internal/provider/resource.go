@@ -302,7 +302,9 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 // waitForPhase polls the runner status until it reaches the expected phase
-// or the API returns 404 (treated as success for deletion).
+// or the API returns 404 (treated as success for deletion). After deleting a
+// runner, the API may keep returning the runner in ACTIVE for a short time and
+// then start returning 404. In testing, it never returned RUNNER_PHASE_DELETED.
 func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected gitpod.RunnerPhase) (*gitpod.Runner, error) {
 	const (
 		pollInterval = 2 * time.Second
@@ -321,7 +323,7 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 		if err != nil {
 			var apiErr *gitpod.Error
 			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
-				return nil, nil // gone
+				return nil, nil // Delete completion is observed as 404 in practice; RUNNER_PHASE_DELETED is not returned.
 			}
 			return nil, fmt.Errorf("error polling runner status: %w", err)
 		}
