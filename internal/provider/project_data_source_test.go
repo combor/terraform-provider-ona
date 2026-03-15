@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -14,54 +15,57 @@ import (
 )
 
 func TestMapProjectToDataSourceModel_MapsComputedFields(t *testing.T) {
-	project := gitpod.Project{
-		ID:                   "project-456",
-		AutomationsFilePath:  ".gitpod/automations.yaml",
-		DevcontainerFilePath: ".devcontainer/devcontainer.json",
-		DesiredPhase:         gitpod.ProjectPhaseActive,
-		Initializer: gitpod.EnvironmentInitializer{
-			Specs: []gitpod.EnvironmentInitializerSpec{{
-				ContextURL: gitpod.EnvironmentInitializerSpecsContextURL{
-					URL: "https://example.com/context",
-				},
-				Git: gitpod.EnvironmentInitializerSpecsGit{
-					RemoteUri: "https://github.com/combor/terraform-provider-ona",
-				},
-			}},
-		},
-		PrebuildConfiguration: gitpod.ProjectPrebuildConfiguration{
-			Enabled:               true,
-			EnableJetbrainsWarmup: true,
-			EnvironmentClassIDs:   []string{"env-1"},
-			Timeout:               "3600s",
-			Executor: shared.Subject{
-				ID:        "subject-1",
-				Principal: shared.PrincipalUser,
+	var project gitpod.Project
+	raw := `{
+		"prebuildConfiguration": {
+			"enabled": true,
+			"enableJetbrainsWarmup": true,
+			"environmentClassIds": ["env-1"],
+			"timeout": "3600s",
+			"executor": {
+				"id": "subject-1",
+				"principal": "PRINCIPAL_USER"
+			}
+		}
+	}`
+	require.NoError(t, json.Unmarshal([]byte(raw), &project))
+
+	project.ID = "project-456"
+	project.AutomationsFilePath = ".gitpod/automations.yaml"
+	project.DevcontainerFilePath = ".devcontainer/devcontainer.json"
+	project.DesiredPhase = gitpod.ProjectPhaseActive
+	project.Initializer = gitpod.EnvironmentInitializer{
+		Specs: []gitpod.EnvironmentInitializerSpec{{
+			ContextURL: gitpod.EnvironmentInitializerSpecsContextURL{
+				URL: "https://example.com/context",
 			},
-		},
-		RecommendedEditors: gitpod.RecommendedEditors{
-			Editors: map[string]gitpod.RecommendedEditorsEditor{
-				"vscode": {Versions: []string{"stable"}},
+			Git: gitpod.EnvironmentInitializerSpecsGit{
+				RemoteUri: "https://github.com/combor/terraform-provider-ona",
 			},
+		}},
+	}
+	project.RecommendedEditors = gitpod.RecommendedEditors{
+		Editors: map[string]gitpod.RecommendedEditorsEditor{
+			"vscode": {Versions: []string{"stable"}},
 		},
-		TechnicalDescription: "project description",
-		Metadata: gitpod.ProjectMetadata{
-			Name:           "project-name",
-			OrganizationID: "org-123",
-			CreatedAt:      time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
-			UpdatedAt:      time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC),
-			Creator: shared.Subject{
-				ID:        "creator-1",
-				Principal: shared.PrincipalUser,
-			},
+	}
+	project.TechnicalDescription = "project description"
+	project.Metadata = gitpod.ProjectMetadata{
+		Name:           "project-name",
+		OrganizationID: "org-123",
+		CreatedAt:      time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+		UpdatedAt:      time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC),
+		Creator: shared.Subject{
+			ID:        "creator-1",
+			Principal: shared.PrincipalUser,
 		},
-		UsedBy: gitpod.ProjectUsedBy{
-			TotalSubjects: 1,
-			Subjects: []shared.Subject{{
-				ID:        "user-1",
-				Principal: shared.PrincipalUser,
-			}},
-		},
+	}
+	project.UsedBy = gitpod.ProjectUsedBy{
+		TotalSubjects: 1,
+		Subjects: []shared.Subject{{
+			ID:        "user-1",
+			Principal: shared.PrincipalUser,
+		}},
 	}
 
 	got, diags := mapProjectToDataSourceModel(context.Background(), project)
@@ -106,4 +110,23 @@ func TestMapProjectToDataSourceModel_MapsComputedFields(t *testing.T) {
 	diags = got.UsedBy.As(context.Background(), &usedBy, basetypes.ObjectAsOptions{})
 	require.False(t, diags.HasError())
 	assert.Equal(t, int64(1), usedBy.TotalSubjects.ValueInt64())
+}
+
+func TestMapProjectToDataSourceModel_ExplicitDisabledPrebuildRemainsPresent(t *testing.T) {
+	var project gitpod.Project
+	raw := `{
+		"id": "project-789",
+		"prebuildConfiguration": {
+			"enabled": false
+		}
+	}`
+	require.NoError(t, json.Unmarshal([]byte(raw), &project))
+
+	got, diags := mapProjectToDataSourceModel(context.Background(), project)
+	require.False(t, diags.HasError())
+
+	prebuildGot, diags := projectPrebuildConfigurationModelFromObject(context.Background(), got.PrebuildConfiguration)
+	require.False(t, diags.HasError())
+	require.NotNil(t, prebuildGot)
+	assert.False(t, prebuildGot.Enabled.ValueBool())
 }

@@ -718,7 +718,10 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 	if diags.HasError() {
 		return projectModel{}, diags
 	}
-	prebuildConfig := mapProjectPrebuildConfigurationToModel(project.PrebuildConfiguration, prebuildPrior)
+	prebuildConfig := mapProjectPrebuildConfigurationToModel(
+		project.PrebuildConfiguration,
+		prebuildPrior,
+	)
 	prebuildValue, prebuildValueDiags := projectPrebuildConfigurationObjectValue(ctx, prebuildConfig)
 	diags.Append(prebuildValueDiags...)
 	if diags.HasError() {
@@ -800,42 +803,163 @@ func mapProjectInitializerToModel(initializer gitpod.EnvironmentInitializer, pri
 }
 
 func mapProjectPrebuildConfigurationToModel(cfg gitpod.ProjectPrebuildConfiguration, prior *projectPrebuildConfigurationModel) *projectPrebuildConfigurationModel {
-	if !hasProjectPrebuildConfiguration(cfg) && prior == nil {
-		return nil
+	if cfg.JSON.RawJSON() == "" {
+		return knownProjectPrebuildConfiguration(prior)
 	}
 
-	if !hasProjectPrebuildConfiguration(cfg) && prior != nil {
-		return prior
-	}
+	prior = knownProjectPrebuildConfiguration(prior)
 
 	model := &projectPrebuildConfigurationModel{
-		Enabled:               types.BoolValue(cfg.Enabled),
-		EnableJetbrainsWarmup: types.BoolValue(cfg.EnableJetbrainsWarmup),
-		EnvironmentClassIDs:   stringListValue(cfg.EnvironmentClassIDs),
-		Timeout:               stringValueOrNull(cfg.Timeout),
+		Enabled:               types.BoolNull(),
+		EnableJetbrainsWarmup: types.BoolNull(),
+		EnvironmentClassIDs:   types.ListNull(types.StringType),
+		Timeout:               types.StringNull(),
 	}
 
-	if cfg.Executor.ID != "" || cfg.Executor.Principal != "" {
+	if !cfg.JSON.Enabled.IsMissing() {
+		model.Enabled = types.BoolValue(cfg.Enabled)
+	} else if prior != nil {
+		model.Enabled = prior.Enabled
+	}
+
+	if !cfg.JSON.EnableJetbrainsWarmup.IsMissing() {
+		model.EnableJetbrainsWarmup = types.BoolValue(cfg.EnableJetbrainsWarmup)
+	} else if prior != nil {
+		model.EnableJetbrainsWarmup = prior.EnableJetbrainsWarmup
+	}
+
+	if !cfg.JSON.EnvironmentClassIDs.IsMissing() {
+		model.EnvironmentClassIDs = stringListValue(cfg.EnvironmentClassIDs)
+	} else if prior != nil {
+		model.EnvironmentClassIDs = prior.EnvironmentClassIDs
+	}
+
+	if !cfg.JSON.Executor.IsMissing() {
 		model.Executor = mapSubjectToModel(cfg.Executor, nil)
 	} else if prior != nil {
 		model.Executor = prior.Executor
 	}
 
-	if !cfg.Trigger.DailySchedule.JSON.HourUtc.IsMissing() {
-		model.Trigger = &projectPrebuildTriggerModel{
-			DailySchedule: &projectPrebuildDailyScheduleModel{
-				HourUTC: types.Int64Value(cfg.Trigger.DailySchedule.HourUtc),
-			},
-		}
+	if !cfg.JSON.Timeout.IsMissing() {
+		model.Timeout = stringValueOrNull(cfg.Timeout)
 	} else if prior != nil {
-		model.Trigger = prior.Trigger
+		model.Timeout = prior.Timeout
 	}
 
-	if model.EnvironmentClassIDs.IsNull() && prior != nil {
-		model.EnvironmentClassIDs = prior.EnvironmentClassIDs
-	}
+	model.Trigger = mapProjectPrebuildTriggerToModel(cfg.Trigger, !cfg.JSON.Trigger.IsMissing(), priorProjectPrebuildTrigger(prior))
 
 	return model
+}
+
+func mapProjectPrebuildTriggerToModel(trigger gitpod.ProjectPrebuildConfigurationTrigger, present bool, prior *projectPrebuildTriggerModel) *projectPrebuildTriggerModel {
+	if !present {
+		return prior
+	}
+
+	return &projectPrebuildTriggerModel{
+		DailySchedule: mapProjectPrebuildDailyScheduleToModel(trigger.DailySchedule, priorProjectPrebuildDailySchedule(prior)),
+	}
+}
+
+func mapProjectPrebuildDailyScheduleToModel(schedule gitpod.ProjectPrebuildConfigurationTriggerDailySchedule, prior *projectPrebuildDailyScheduleModel) *projectPrebuildDailyScheduleModel {
+	if !schedule.JSON.HourUtc.IsMissing() {
+		return &projectPrebuildDailyScheduleModel{
+			HourUTC: types.Int64Value(schedule.HourUtc),
+		}
+	}
+
+	return prior
+}
+
+func priorProjectPrebuildTrigger(prior *projectPrebuildConfigurationModel) *projectPrebuildTriggerModel {
+	if prior == nil {
+		return nil
+	}
+
+	return prior.Trigger
+}
+
+func priorProjectPrebuildDailySchedule(prior *projectPrebuildTriggerModel) *projectPrebuildDailyScheduleModel {
+	if prior == nil {
+		return nil
+	}
+
+	return prior.DailySchedule
+}
+
+func knownProjectPrebuildConfiguration(prior *projectPrebuildConfigurationModel) *projectPrebuildConfigurationModel {
+	if prior == nil {
+		return nil
+	}
+
+	return &projectPrebuildConfigurationModel{
+		Enabled:               knownBoolOrNull(prior.Enabled),
+		EnableJetbrainsWarmup: knownBoolOrNull(prior.EnableJetbrainsWarmup),
+		EnvironmentClassIDs:   knownStringListOrNull(prior.EnvironmentClassIDs),
+		Executor:              knownProjectSubject(prior.Executor),
+		Timeout:               knownStringOrNull(prior.Timeout),
+		Trigger:               knownProjectPrebuildTrigger(prior.Trigger),
+	}
+}
+
+func knownProjectPrebuildTrigger(prior *projectPrebuildTriggerModel) *projectPrebuildTriggerModel {
+	if prior == nil {
+		return nil
+	}
+
+	dailySchedule := knownProjectPrebuildDailySchedule(prior.DailySchedule)
+	if dailySchedule == nil {
+		return nil
+	}
+
+	return &projectPrebuildTriggerModel{
+		DailySchedule: dailySchedule,
+	}
+}
+
+func knownProjectPrebuildDailySchedule(prior *projectPrebuildDailyScheduleModel) *projectPrebuildDailyScheduleModel {
+	if prior == nil || prior.HourUTC.IsUnknown() {
+		return nil
+	}
+
+	return &projectPrebuildDailyScheduleModel{
+		HourUTC: prior.HourUTC,
+	}
+}
+
+func knownProjectSubject(prior *projectSubjectModel) *projectSubjectModel {
+	if prior == nil || prior.ID.IsUnknown() || prior.Principal.IsUnknown() {
+		return nil
+	}
+
+	return &projectSubjectModel{
+		ID:        prior.ID,
+		Principal: prior.Principal,
+	}
+}
+
+func knownBoolOrNull(prior types.Bool) types.Bool {
+	if prior.IsUnknown() {
+		return types.BoolNull()
+	}
+
+	return prior
+}
+
+func knownStringOrNull(prior types.String) types.String {
+	if prior.IsUnknown() {
+		return types.StringNull()
+	}
+
+	return prior
+}
+
+func knownStringListOrNull(prior types.List) types.List {
+	if prior.IsUnknown() {
+		return types.ListNull(types.StringType)
+	}
+
+	return prior
 }
 
 func mapRecommendedEditorsToModel(editors gitpod.RecommendedEditors, prior map[string]projectRecommendedEditor) map[string]projectRecommendedEditor {
@@ -873,16 +997,6 @@ func mapSubjectsToModel(subjects []shared.Subject) []projectSubjectModel {
 		})
 	}
 	return result
-}
-
-func hasProjectPrebuildConfiguration(cfg gitpod.ProjectPrebuildConfiguration) bool {
-	return cfg.Enabled ||
-		cfg.EnableJetbrainsWarmup ||
-		len(cfg.EnvironmentClassIDs) > 0 ||
-		cfg.Executor.ID != "" ||
-		cfg.Executor.Principal != "" ||
-		cfg.Timeout != "" ||
-		!cfg.Trigger.DailySchedule.JSON.HourUtc.IsMissing()
 }
 
 func hasInitializerContextURL(contextURL gitpod.EnvironmentInitializerSpecsContextURL) bool {

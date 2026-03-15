@@ -139,6 +139,13 @@ func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
 	prebuildGot, diags := projectPrebuildConfigurationModelFromObject(context.Background(), got.PrebuildConfiguration)
 	require.False(t, diags.HasError())
 	require.NotNil(t, prebuildGot)
+	assert.False(t, prebuildGot.Enabled.ValueBool())
+	assert.False(t, prebuildGot.EnableJetbrainsWarmup.ValueBool())
+	prebuildEnvClassIDs := prebuildGot.EnvironmentClassIDs.Elements()
+	require.Len(t, prebuildEnvClassIDs, 1)
+	envClassID, ok := prebuildEnvClassIDs[0].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, "env-1", envClassID.ValueString())
 	assert.Equal(t, int64(0), prebuildGot.Trigger.DailySchedule.HourUTC.ValueInt64())
 
 	recommendedEditorsGot, diags := projectRecommendedEditorsFromMap(context.Background(), got.RecommendedEditors)
@@ -173,6 +180,52 @@ func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T)
 	require.NotNil(t, got.Trigger)
 	require.NotNil(t, got.Trigger.DailySchedule)
 	assert.Equal(t, int64(0), got.Trigger.DailySchedule.HourUTC.ValueInt64())
+}
+
+func TestMapProjectPrebuildConfigurationToModel_EnabledFalseFromAPI(t *testing.T) {
+	var cfg gitpod.ProjectPrebuildConfiguration
+	raw := `{"enabled":false}`
+	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+
+	got := mapProjectPrebuildConfigurationToModel(cfg, nil)
+
+	require.NotNil(t, got)
+	assert.False(t, got.Enabled.ValueBool())
+	assert.True(t, got.EnableJetbrainsWarmup.IsNull())
+	assert.True(t, got.EnvironmentClassIDs.IsNull())
+	assert.Nil(t, got.Executor)
+	assert.True(t, got.Timeout.IsNull())
+	assert.Nil(t, got.Trigger)
+}
+
+func TestMapProjectPrebuildConfigurationToModel_DoesNotReuseUnknownPriorValues(t *testing.T) {
+	var cfg gitpod.ProjectPrebuildConfiguration
+	raw := `{"enabled":true}`
+	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+
+	got := mapProjectPrebuildConfigurationToModel(cfg, &projectPrebuildConfigurationModel{
+		Enabled:               types.BoolValue(true),
+		EnableJetbrainsWarmup: types.BoolUnknown(),
+		EnvironmentClassIDs:   types.ListUnknown(types.StringType),
+		Executor: &projectSubjectModel{
+			ID:        types.StringUnknown(),
+			Principal: types.StringUnknown(),
+		},
+		Timeout: types.StringUnknown(),
+		Trigger: &projectPrebuildTriggerModel{
+			DailySchedule: &projectPrebuildDailyScheduleModel{
+				HourUTC: types.Int64Unknown(),
+			},
+		},
+	})
+
+	require.NotNil(t, got)
+	assert.True(t, got.Enabled.ValueBool())
+	assert.True(t, got.EnableJetbrainsWarmup.IsNull())
+	assert.True(t, got.EnvironmentClassIDs.IsNull())
+	assert.Nil(t, got.Executor)
+	assert.True(t, got.Timeout.IsNull())
+	assert.Nil(t, got.Trigger)
 }
 
 func TestBuildEnvironmentInitializerParam_NilInitializer(t *testing.T) {
