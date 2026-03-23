@@ -29,7 +29,9 @@ From the repo root, before finishing a change:
 "Run integration tests" means running the `integration` job from the CI pipeline via `act`:
 
 ```bash
-act push -j integration --container-architecture linux/amd64 \
+act push -j integration \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --action-offline-mode \
   -s GITPOD_API_KEY="$GITPOD_API_KEY" \
   -s RUNNER_MANAGER_ID=01984227-2946-7e40-a982-2f427741f5da
 ```
