@@ -17,3 +17,7 @@ output "project_lookup_id" {
 output "project_lookup_name" {
   value = data.ona_project.example.name
 }
+
+output "secret_id" {
+  value = ona_secret.example.id
+}

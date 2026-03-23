@@ -43,3 +43,10 @@ variable "project_git_remote_uri" {
   type        = string
   default     = "https://github.com/combor/terraform-provider-ona"
 }
+
+variable "secret_value" {
+  description = "Value for the test secret."
+  type        = string
+  sensitive   = true
+  default     = "ci-test-secret-value"
+}

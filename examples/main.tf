@@ -77,3 +77,11 @@ resource "ona_project" "example" {
 data "ona_project" "example" {
   id = ona_project.example.id
 }
+
+resource "ona_secret" "example" {
+  name       = "TF_CI_SECRET"
+  value      = var.secret_value
+  project_id = ona_project.example.id
+
+  environment_variable = true
+}
