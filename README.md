@@ -14,8 +14,11 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 ## Quick Links
 
 - [Terraform Registry](https://registry.terraform.io/providers/combor/ona/latest)
+- [Provider Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/index.md)
 - [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
 - [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
+- [Secret Resource Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/resources/ona_secret/resource.tf)
+- [Secret Import Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/resources/ona_secret/import.sh)
 - [Authenticated Identity Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md)
 - [Project Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md)
 - [Runner Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md)
@@ -31,6 +34,7 @@ Resources:
 
 - `ona_project`
 - `ona_runner`
+- `ona_secret`
 
 Data sources:
 
@@ -48,14 +52,17 @@ Data sources:
 terraform {
   required_providers {
     ona = {
-      source  = "combor/ona"
-      version = ">= 0.2"
+      source = "combor/ona"
     }
   }
 }
 
 provider "ona" {
   api_key = var.ona_api_key
+  # optional:
+  # base_url        = var.ona_base_url
+  # max_retries     = 2
+  # request_timeout = "20s"
 }
 ```
 
@@ -117,12 +124,28 @@ data "ona_project" "example" {
   id = ona_project.example.id
 }
 
+resource "ona_secret" "example" {
+  name       = "DATABASE_URL"
+  value      = "postgres://user:pass@db.example.com/mydb"
+  project_id = ona_project.example.id
+
+  environment_variable = true
+}
+
 data "ona_runner" "example" {
   id = ona_runner.example.id
 }
 ```
 
-See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration and [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/authenticated_identity.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md), [docs/data-sources/group.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/group.md), [docs/data-sources/groups.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/groups.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md), [docs/data-sources/runner_environment_classes.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md), and [docs/data-sources/runners.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runners.md) for the generated schema docs.
+See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/main.tf) for the integration-test configuration, [examples/resources/ona_secret/resource.tf](https://github.com/combor/terraform-provider-ona/blob/main/examples/resources/ona_secret/resource.tf) for additional secret examples, and [docs/index.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/index.md), [docs/resources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md), [docs/resources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md), [docs/data-sources/authenticated_identity.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md), [docs/data-sources/group.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/group.md), [docs/data-sources/groups.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/groups.md), [docs/data-sources/project.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/project.md), [docs/data-sources/runner.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner.md), [docs/data-sources/runner_environment_classes.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runner_environment_classes.md), and [docs/data-sources/runners.md](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/runners.md) for the checked-in docs.
+
+## Importing Existing Resources
+
+```bash
+terraform import ona_runner.example <runner-id>
+terraform import ona_project.example <project-id>
+terraform import ona_secret.example <project-id>/<secret-id>
+```
 
 ## Development
 
@@ -134,7 +157,17 @@ go build -o terraform-provider-ona .
 go test ./...
 
 # Run the local CI checks used in day-to-day development
-act push -j build -j test -s GITPOD_API_KEY=<your-key>
+act push -j govulncheck -j build -j test
+```
+
+Run integration tests against the real Gitpod API with:
+
+```bash
+act push -j integration \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --action-offline-mode \
+  -s GITPOD_API_KEY=<your-key> \
+  -s RUNNER_MANAGER_ID=<runner-manager-id>
 ```
 
 To test the provider locally, create a `~/.terraformrc` with dev overrides:
@@ -156,4 +189,5 @@ Before opening a pull request, run:
 
 - `gofmt -w` on changed Go files
 - `go test ./...`
-- `act push -j build -j test -s GITPOD_API_KEY=<your-key>`
+- `act push -j govulncheck -j build -j test`
+- If you changed provider behavior or examples, also run the integration job with `GITPOD_API_KEY` and `RUNNER_MANAGER_ID`
