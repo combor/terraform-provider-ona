@@ -2,6 +2,29 @@
 
 This file is a quick guide for AI coding agents and human contributors working on this repo.
 
+## Project overview
+
+Terraform provider for managing Gitpod resources on ona.com. The provider uses the HashiCorp Terraform Plugin Framework and the Gitpod SDK Go client.
+
+- Provider registry address: `registry.terraform.io/combor/ona`
+- Provider type name: `ona`
+- Provider configuration: `api_key`, `base_url`, `max_retries`, `request_timeout`
+- Resources: `ona_project`, `ona_runner`, `ona_secret`
+- Data sources: `ona_authenticated_identity`, `ona_group`, `ona_groups`, `ona_project`, `ona_runner`, `ona_runner_environment_classes`, `ona_runners`
+
+## Build and test commands
+
+```bash
+# Run all tests
+go test ./...
+
+# Build the provider binary
+go build -o terraform-provider-ona .
+
+# Run the non-release CI jobs used in day-to-day development
+act push -j govulncheck -j build -j test
+```
+
 ## Editing guidance
 
 - Prefer small, focused changes with matching test updates
@@ -22,7 +45,7 @@ From the repo root, before finishing a change:
 
 1. Run `gofmt -w` on changed Go files
 2. Run tests: `go test ./...`
-3. Run CI pipeline locally: `act push -j build -j test`
+3. Run local CI checks: `act push -j govulncheck -j build -j test`
 
 ## Running integration tests
 
@@ -36,4 +59,6 @@ act push -j integration \
   -s RUNNER_MANAGER_ID=01984227-2946-7e40-a982-2f427741f5da
 ```
 
-This runs `terraform apply` and `terraform destroy` against the real Gitpod API using the examples/ directory. Requires `GITPOD_API_KEY` to be set.
+This runs the local `integration` matrix for Terraform `1.7.*` and `1.14.*` against the real Gitpod API. It first applies and destroys `examples/cleanup`, then applies and destroys the main `examples/` configuration, which currently exercises `ona_runner`, `ona_project`, and `ona_secret`.
+
+Requires `GITPOD_API_KEY` to be set. The integration job also requires `RUNNER_MANAGER_ID`.
