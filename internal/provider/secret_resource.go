@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -255,7 +256,23 @@ func (r *secretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *secretResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	projectID, secretID, err := parseSecretImportID(req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid import ID", err.Error())
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("project_id"), projectID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), secretID)...)
+}
+
+func parseSecretImportID(importID string) (string, string, error) {
+	projectID, secretID, ok := strings.Cut(importID, "/")
+	if !ok || projectID == "" || secretID == "" {
+		return "", "", fmt.Errorf("expected import identifier in the format <project-id>/<secret-id>")
+	}
+
+	return projectID, secretID, nil
 }
 
 // findSecretByID lists secrets scoped to a project and returns the one matching the given ID.
