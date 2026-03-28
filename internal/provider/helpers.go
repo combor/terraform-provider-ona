@@ -24,6 +24,16 @@ func mergeStringWithPrior(current string, prior types.String) types.String {
 	return types.StringNull()
 }
 
+func stringValueOrPriorExplicitEmpty(current string, prior types.String) types.String {
+	if current != "" {
+		return types.StringValue(current)
+	}
+	if !prior.IsNull() && !prior.IsUnknown() && prior.ValueString() == "" {
+		return types.StringValue("")
+	}
+	return types.StringNull()
+}
+
 func stringListValue(values []string) types.List {
 	elems := make([]types.String, 0, len(values))
 	for _, value := range values {

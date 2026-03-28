@@ -81,3 +81,96 @@ func TestMapScmIntegrationToModel_PreservesClientSecret(t *testing.T) {
 	got := mapScmIntegrationToModel(integration, prior)
 	assert.Equal(t, "my-secret-value", got.OAuthPlaintextClientSecret.ValueString())
 }
+
+func TestMapScmIntegrationToModel_PreservesExplicitEmptyOAuthClientIDFromPrior(t *testing.T) {
+	integration := gitpod.ScmIntegration{
+		ID:       "int-1",
+		RunnerID: "runner-1",
+		ScmID:    "github",
+		Host:     "github.com",
+	}
+
+	prior := runnerScmIntegrationModel{
+		OAuthClientID: types.StringValue(""),
+	}
+
+	got := mapScmIntegrationToModel(integration, prior)
+
+	assert.False(t, got.OAuthClientID.IsNull())
+	assert.Equal(t, "", got.OAuthClientID.ValueString())
+}
+
+func TestMapScmIntegrationToModel_DoesNotPreservePriorNonEmptyOAuthClientIDWhenAPIReturnsEmpty(t *testing.T) {
+	integration := gitpod.ScmIntegration{
+		ID:       "int-1",
+		RunnerID: "runner-1",
+		ScmID:    "github",
+		Host:     "github.com",
+	}
+
+	prior := runnerScmIntegrationModel{
+		OAuthClientID: types.StringValue("client-id"),
+	}
+
+	got := mapScmIntegrationToModel(integration, prior)
+
+	assert.True(t, got.OAuthClientID.IsNull())
+}
+
+func TestBuildRunnerScmIntegrationUpdateParams_PreservesExplicitEmptyOAuthClientID(t *testing.T) {
+	plan := runnerScmIntegrationModel{
+		OAuthClientID: types.StringValue(""),
+	}
+	prior := runnerScmIntegrationModel{
+		ID: types.StringValue("int-1"),
+	}
+
+	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
+
+	assert.True(t, got.OAuthClientID.Present)
+	assert.Equal(t, "", got.OAuthClientID.Value)
+}
+
+func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientIDWhenRemovedFromConfig(t *testing.T) {
+	plan := runnerScmIntegrationModel{
+		OAuthClientID: types.StringNull(),
+	}
+	prior := runnerScmIntegrationModel{
+		ID:            types.StringValue("int-1"),
+		OAuthClientID: types.StringValue("old-client-id"),
+	}
+
+	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
+
+	assert.True(t, got.OAuthClientID.Present)
+	assert.Equal(t, "", got.OAuthClientID.Value)
+}
+
+func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientSecretWhenRemovedFromConfig(t *testing.T) {
+	plan := runnerScmIntegrationModel{
+		OAuthPlaintextClientSecret: types.StringNull(),
+	}
+	prior := runnerScmIntegrationModel{
+		ID:                         types.StringValue("int-1"),
+		OAuthPlaintextClientSecret: types.StringValue("old-secret"),
+	}
+
+	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
+
+	assert.True(t, got.OAuthPlaintextClientSecret.Present)
+	assert.Equal(t, "", got.OAuthPlaintextClientSecret.Value)
+}
+
+func TestBuildRunnerScmIntegrationUpdateParams_DoesNotClearUnknownOAuthClientSecret(t *testing.T) {
+	plan := runnerScmIntegrationModel{
+		OAuthPlaintextClientSecret: types.StringUnknown(),
+	}
+	prior := runnerScmIntegrationModel{
+		ID:                         types.StringValue("int-1"),
+		OAuthPlaintextClientSecret: types.StringValue("old-secret"),
+	}
+
+	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
+
+	assert.False(t, got.OAuthPlaintextClientSecret.Present)
+}
