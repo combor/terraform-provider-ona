@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
@@ -54,6 +55,30 @@ func TestMapRunnersToDataSourceModel_NullRunnerManagerID(t *testing.T) {
 
 	require.Len(t, got.Runners, 1)
 	assert.True(t, got.Runners[0].RunnerManagerID.IsNull())
+}
+
+func TestMapRunnerToDataSourceModel_UpdateWindowMissingEndHourRemainsNull(t *testing.T) {
+	var cfg gitpod.RunnerConfiguration
+	require.NoError(t, json.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), &cfg))
+
+	runner := gitpod.Runner{
+		RunnerID: "runner-123",
+		Name:     "runner-name",
+		Provider: gitpod.RunnerProviderAwsEc2,
+		Spec: gitpod.RunnerSpec{
+			DesiredPhase:  gitpod.RunnerPhaseActive,
+			Variant:       gitpod.RunnerVariantStandard,
+			Configuration: cfg,
+		},
+	}
+
+	got := mapRunnerToDataSourceModel(runner)
+
+	require.NotNil(t, got.Spec)
+	require.NotNil(t, got.Spec.Configuration)
+	require.NotNil(t, got.Spec.Configuration.UpdateWindow)
+	assert.Equal(t, int64(22), got.Spec.Configuration.UpdateWindow.StartHour.ValueInt64())
+	assert.True(t, got.Spec.Configuration.UpdateWindow.EndHour.IsNull())
 }
 
 func TestMatchesRunnerFilters_NoFilters(t *testing.T) {

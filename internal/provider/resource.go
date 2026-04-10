@@ -48,19 +48,26 @@ type runnerSpecModel struct {
 }
 
 type runnerConfigModel struct {
-	AutoUpdate                    types.Bool          `tfsdk:"auto_update"`
-	DevcontainerImageCacheEnabled types.Bool          `tfsdk:"devcontainer_image_cache_enabled"`
-	Region                        types.String        `tfsdk:"region"`
-	ReleaseChannel                types.String        `tfsdk:"release_channel"`
-	LogLevel                      types.String        `tfsdk:"log_level"`
-	Metrics                       *runnerMetricsModel `tfsdk:"metrics"`
+	AutoUpdate                    types.Bool               `tfsdk:"auto_update"`
+	DevcontainerImageCacheEnabled types.Bool               `tfsdk:"devcontainer_image_cache_enabled"`
+	Region                        types.String             `tfsdk:"region"`
+	ReleaseChannel                types.String             `tfsdk:"release_channel"`
+	LogLevel                      types.String             `tfsdk:"log_level"`
+	Metrics                       *runnerMetricsModel      `tfsdk:"metrics"`
+	UpdateWindow                  *runnerUpdateWindowModel `tfsdk:"update_window"`
+}
+
+type runnerUpdateWindowModel struct {
+	StartHour types.Int64 `tfsdk:"start_hour"`
+	EndHour   types.Int64 `tfsdk:"end_hour"`
 }
 
 type runnerMetricsModel struct {
-	Enabled  types.Bool   `tfsdk:"enabled"`
-	URL      types.String `tfsdk:"url"`
-	Username types.String `tfsdk:"username"`
-	Password types.String `tfsdk:"password"`
+	Enabled               types.Bool   `tfsdk:"enabled"`
+	ManagedMetricsEnabled types.Bool   `tfsdk:"managed_metrics_enabled"`
+	URL                   types.String `tfsdk:"url"`
+	Username              types.String `tfsdk:"username"`
+	Password              types.String `tfsdk:"password"`
 }
 
 func (r *runnerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -134,6 +141,10 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 									"enabled": schema.BoolAttribute{
 										Optional: true,
 									},
+									"managed_metrics_enabled": schema.BoolAttribute{
+										Optional:            true,
+										MarkdownDescription: "When true, the runner pushes metrics to the management plane instead of directly to the remote_write endpoint.",
+									},
 									"url": schema.StringAttribute{
 										Optional: true,
 									},
@@ -143,6 +154,21 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 									"password": schema.StringAttribute{
 										Optional:  true,
 										Sensitive: true,
+									},
+								},
+							},
+							"update_window": schema.SingleNestedAttribute{
+								Optional:            true,
+								MarkdownDescription: "Daily time window (UTC) during which auto-updates are allowed. Must be at least 2 hours. Overnight windows supported (e.g. start_hour=22, end_hour=4).",
+								Attributes: map[string]schema.Attribute{
+									"start_hour": schema.Int64Attribute{
+										Required:            true,
+										MarkdownDescription: "Start of the update window as a UTC hour (0-23).",
+									},
+									"end_hour": schema.Int64Attribute{
+										Optional:            true,
+										Computed:            true,
+										MarkdownDescription: "End of the update window as a UTC hour (0-23). Defaults to start_hour + 2.",
 									},
 								},
 							},
@@ -244,13 +270,13 @@ func (r *runnerResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	params := gitpod.RunnerUpdateParams{
-		RunnerID: gitpod.F(plan.ID.ValueString()),
-		Name:     gitpod.F(plan.Name.ValueString()),
+	var prior runnerModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	if plan.Spec != nil {
-		params.Spec = gitpod.F(buildUpdateSpecParam(plan.Spec))
-	}
+
+	params := buildRunnerUpdateParams(plan, prior)
 
 	_, err := r.client.Runners.Update(ctx, params)
 	if err != nil {
@@ -387,6 +413,19 @@ func buildConfigParam(cfg *runnerConfigModel) gitpod.RunnerConfigurationParam {
 	if cfg.Metrics != nil {
 		p.Metrics = gitpod.F(buildMetricsParam(cfg.Metrics))
 	}
+	if cfg.UpdateWindow != nil {
+		p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+	}
+	return p
+}
+
+func buildUpdateWindowParam(w *runnerUpdateWindowModel) gitpod.UpdateWindowParam {
+	p := gitpod.UpdateWindowParam{
+		StartHour: gitpod.F(w.StartHour.ValueInt64()),
+	}
+	if !w.EndHour.IsNull() && !w.EndHour.IsUnknown() {
+		p.EndHour = gitpod.F(w.EndHour.ValueInt64())
+	}
 	return p
 }
 
@@ -394,6 +433,9 @@ func buildMetricsParam(m *runnerMetricsModel) gitpod.MetricsConfigurationParam {
 	p := gitpod.MetricsConfigurationParam{}
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
 		p.Enabled = gitpod.F(m.Enabled.ValueBool())
+	}
+	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
+		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
 	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
 		p.URL = gitpod.F(m.URL.ValueString())
@@ -403,37 +445,6 @@ func buildMetricsParam(m *runnerMetricsModel) gitpod.MetricsConfigurationParam {
 	}
 	if !m.Password.IsNull() && !m.Password.IsUnknown() {
 		p.Password = gitpod.F(m.Password.ValueString())
-	}
-	return p
-}
-
-func buildUpdateSpecParam(spec *runnerSpecModel) gitpod.RunnerUpdateParamsSpec {
-	p := gitpod.RunnerUpdateParamsSpec{}
-	if !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
-		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
-	}
-	if spec.Configuration != nil {
-		p.Configuration = gitpod.F(buildUpdateConfigParam(spec.Configuration))
-	}
-	return p
-}
-
-func buildUpdateConfigParam(cfg *runnerConfigModel) gitpod.RunnerUpdateParamsSpecConfiguration {
-	p := gitpod.RunnerUpdateParamsSpecConfiguration{}
-	if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
-		p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
-	}
-	if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
-		p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
-	}
-	if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
-		p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
-	}
-	if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
-		p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
-	}
-	if cfg.Metrics != nil {
-		p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
 	}
 	return p
 }
@@ -443,6 +454,9 @@ func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpe
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
 		p.Enabled = gitpod.F(m.Enabled.ValueBool())
 	}
+	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
+		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
+	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
 		p.URL = gitpod.F(m.URL.ValueString())
 	}
@@ -453,6 +467,96 @@ func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpe
 		p.Password = gitpod.F(m.Password.ValueString())
 	}
 	return p
+}
+
+func buildRunnerUpdateParams(plan, prior runnerModel) gitpod.RunnerUpdateParams {
+	params := gitpod.RunnerUpdateParams{
+		RunnerID: gitpod.F(plan.ID.ValueString()),
+		Name:     gitpod.F(plan.Name.ValueString()),
+	}
+
+	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec); sendSpec {
+		params.Spec = gitpod.F(spec)
+	}
+
+	return params
+}
+
+func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel) (gitpod.RunnerUpdateParamsSpec, bool) {
+	p := gitpod.RunnerUpdateParamsSpec{}
+	sendSpec := false
+
+	if spec != nil && !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
+		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
+		sendSpec = true
+	}
+
+	var priorCfg *runnerConfigModel
+	if prior != nil {
+		priorCfg = prior.Configuration
+	}
+
+	if cfg, sendConfig := buildRunnerUpdateConfigParam(specConfiguration(spec), priorCfg); sendConfig {
+		p.Configuration = gitpod.F(cfg)
+		sendSpec = true
+	}
+
+	return p, sendSpec
+}
+
+func buildRunnerUpdateConfigParam(cfg, prior *runnerConfigModel) (gitpod.RunnerUpdateParamsSpecConfiguration, bool) {
+	p := gitpod.RunnerUpdateParamsSpecConfiguration{}
+	sendConfig := false
+
+	if cfg != nil {
+		if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
+			p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
+			sendConfig = true
+		}
+		if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
+			p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
+			sendConfig = true
+		}
+		if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
+			p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
+			sendConfig = true
+		}
+		if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
+			p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
+			sendConfig = true
+		}
+		if cfg.Metrics != nil {
+			p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
+			sendConfig = true
+		}
+		if cfg.UpdateWindow != nil {
+			p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+			sendConfig = true
+		}
+	}
+
+	if shouldClearRunnerUpdateWindow(cfg, prior) {
+		p.UpdateWindow = gitpod.F(gitpod.UpdateWindowParam{})
+		sendConfig = true
+	}
+
+	return p, sendConfig
+}
+
+func specConfiguration(spec *runnerSpecModel) *runnerConfigModel {
+	if spec == nil {
+		return nil
+	}
+
+	return spec.Configuration
+}
+
+func shouldClearRunnerUpdateWindow(cfg, prior *runnerConfigModel) bool {
+	if prior == nil || prior.UpdateWindow == nil {
+		return false
+	}
+
+	return cfg == nil || cfg.UpdateWindow == nil
 }
 
 func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
@@ -496,12 +600,22 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 			}
 			if prior.Spec.Configuration.Metrics != nil {
 				cfg.Metrics = &runnerMetricsModel{
-					Enabled:  types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-					URL:      stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-					Username: stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+					Enabled:               types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
+					ManagedMetricsEnabled: types.BoolValue(runner.Spec.Configuration.Metrics.ManagedMetricsEnabled),
+					URL:                   stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
+					Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
 					// Preserve password from prior state — API doesn't return it
 					Password: prior.Spec.Configuration.Metrics.Password,
 				}
+			}
+			if startHour, endHour, ok := mapUpdateWindowValues(runner.Spec.Configuration.UpdateWindow); ok {
+				cfg.UpdateWindow = &runnerUpdateWindowModel{
+					StartHour: startHour,
+					EndHour:   endHour,
+				}
+			} else if prior.Spec.Configuration.UpdateWindow != nil {
+				// API returned no update_window but user had one configured — it was cleared
+				cfg.UpdateWindow = nil
 			}
 			spec.Configuration = cfg
 		}

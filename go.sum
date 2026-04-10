@@ -26,8 +26,8 @@ github.com/emirpasic/gods v1.18.1/go.mod h1:8tpGGwCnJ5H4r6BWwaV6OrWmMoPhUl5jm/FM
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
 github.com/fatih/color v1.19.0 h1:Zp3PiM21/9Ld6FzSKyL5c/BULoe/ONr9KlbYVOfG8+w=
 github.com/fatih/color v1.19.0/go.mod h1:zNk67I0ZUT1bEGsSGyCZYZNrHuTkJJB+r6Q9VuMi0LE=
-github.com/gitpod-io/gitpod-sdk-go v0.12.0 h1:t07zjnbJvuyTnSLtpVo/ddd0gIbHfvonKZGxKbJwrk0=
-github.com/gitpod-io/gitpod-sdk-go v0.12.0/go.mod h1:4mCKUT0lDkx/sJBRamDZNvE4BDNghPs4p4mte2+Dz0A=
+github.com/gitpod-io/gitpod-sdk-go v0.13.0 h1:yu9onZoBJUiI7ar+fSM09iF9eBhZajVtsyxZMON9uM8=
+github.com/gitpod-io/gitpod-sdk-go v0.13.0/go.mod h1:4mCKUT0lDkx/sJBRamDZNvE4BDNghPs4p4mte2+Dz0A=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376/go.mod h1:an3vInlBmSxCcxctByoQdvwPiA7DTK7jaaFDBTtu0ic=
 github.com/go-git/go-billy/v5 v5.6.2 h1:6Q86EsPXMa7c3YZ3aLAQsMA0VlWmy43r6FHqa/UNbRM=

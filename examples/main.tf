@@ -78,13 +78,6 @@ data "ona_project" "example" {
   id = ona_project.example.id
 }
 
-resource "ona_runner_scm_integration" "example" {
-  runner_id = ona_runner.example.id
-  scm_id    = "github"
-  host      = "github.com"
-  pat       = true
-}
-
 resource "ona_secret" "example" {
   name       = "TF_CI_SECRET"
   value      = var.secret_value
