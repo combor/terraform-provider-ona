@@ -63,10 +63,11 @@ type runnerUpdateWindowModel struct {
 }
 
 type runnerMetricsModel struct {
-	Enabled  types.Bool   `tfsdk:"enabled"`
-	URL      types.String `tfsdk:"url"`
-	Username types.String `tfsdk:"username"`
-	Password types.String `tfsdk:"password"`
+	Enabled               types.Bool   `tfsdk:"enabled"`
+	ManagedMetricsEnabled types.Bool   `tfsdk:"managed_metrics_enabled"`
+	URL                   types.String `tfsdk:"url"`
+	Username              types.String `tfsdk:"username"`
+	Password              types.String `tfsdk:"password"`
 }
 
 func (r *runnerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -139,6 +140,10 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 								Attributes: map[string]schema.Attribute{
 									"enabled": schema.BoolAttribute{
 										Optional: true,
+									},
+									"managed_metrics_enabled": schema.BoolAttribute{
+										Optional:            true,
+										MarkdownDescription: "When true, the runner pushes metrics to the management plane instead of directly to the remote_write endpoint.",
 									},
 									"url": schema.StringAttribute{
 										Optional: true,
@@ -429,6 +434,9 @@ func buildMetricsParam(m *runnerMetricsModel) gitpod.MetricsConfigurationParam {
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
 		p.Enabled = gitpod.F(m.Enabled.ValueBool())
 	}
+	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
+		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
+	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
 		p.URL = gitpod.F(m.URL.ValueString())
 	}
@@ -479,6 +487,9 @@ func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpe
 	p := gitpod.RunnerUpdateParamsSpecConfigurationMetrics{}
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
 		p.Enabled = gitpod.F(m.Enabled.ValueBool())
+	}
+	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
+		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
 	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
 		p.URL = gitpod.F(m.URL.ValueString())
@@ -533,9 +544,10 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 			}
 			if prior.Spec.Configuration.Metrics != nil {
 				cfg.Metrics = &runnerMetricsModel{
-					Enabled:  types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-					URL:      stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-					Username: stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+					Enabled:               types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
+					ManagedMetricsEnabled: types.BoolValue(runner.Spec.Configuration.Metrics.ManagedMetricsEnabled),
+					URL:                   stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
+					Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
 					// Preserve password from prior state — API doesn't return it
 					Password: prior.Spec.Configuration.Metrics.Password,
 				}

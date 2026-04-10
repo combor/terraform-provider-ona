@@ -83,9 +83,10 @@ func (d *runnerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 							"metrics": schema.SingleNestedAttribute{
 								Computed: true,
 								Attributes: map[string]schema.Attribute{
-									"enabled":  schema.BoolAttribute{Computed: true},
-									"url":      schema.StringAttribute{Computed: true},
-									"username": schema.StringAttribute{Computed: true},
+									"enabled":                 schema.BoolAttribute{Computed: true},
+									"managed_metrics_enabled": schema.BoolAttribute{Computed: true, MarkdownDescription: "When true, the runner pushes metrics to the management plane instead of directly to the remote_write endpoint."},
+									"url":                     schema.StringAttribute{Computed: true},
+									"username":                schema.StringAttribute{Computed: true},
 								},
 							},
 							"update_window": schema.SingleNestedAttribute{
@@ -202,9 +203,10 @@ func mapRunnerConfigToDataSourceModel(runner gitpod.Runner) *runnerDataSourceCon
 		ReleaseChannel:                stringValueOrNull(string(runner.Spec.Configuration.ReleaseChannel)),
 		LogLevel:                      stringValueOrNull(string(runner.Spec.Configuration.LogLevel)),
 		Metrics: &runnerDataSourceMetricsModel{
-			Enabled:  types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-			URL:      stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-			Username: stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+			Enabled:               types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
+			ManagedMetricsEnabled: types.BoolValue(runner.Spec.Configuration.Metrics.ManagedMetricsEnabled),
+			URL:                   stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
+			Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
 		},
 	}
 	if runner.Spec.Configuration.UpdateWindow.JSON.RawJSON() != "" {
@@ -250,7 +252,8 @@ type runnerDataSourceUpdateWindowModel struct {
 }
 
 type runnerDataSourceMetricsModel struct {
-	Enabled  types.Bool   `tfsdk:"enabled"`
-	URL      types.String `tfsdk:"url"`
-	Username types.String `tfsdk:"username"`
+	Enabled               types.Bool   `tfsdk:"enabled"`
+	ManagedMetricsEnabled types.Bool   `tfsdk:"managed_metrics_enabled"`
+	URL                   types.String `tfsdk:"url"`
+	Username              types.String `tfsdk:"username"`
 }
