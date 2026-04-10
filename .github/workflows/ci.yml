@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - id: govulncheck
-        uses: golang/govulncheck-action@v1
+        uses: golang/govulncheck-action@31f7c5463448f83528bd771c2d978d940080c9fd # master, uses checkout@v6.0.2 + setup-go@v6.2.0
 
   build:
     name: Build
