@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	gitpod "github.com/gitpod-io/gitpod-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -49,4 +50,17 @@ func timeValueOrNull(value time.Time) types.String {
 		return types.StringNull()
 	}
 	return types.StringValue(value.Format(time.RFC3339Nano))
+}
+
+func mapUpdateWindowValues(window gitpod.UpdateWindow) (types.Int64, types.Int64, bool) {
+	if window.JSON.RawJSON() == "" {
+		return types.Int64Null(), types.Int64Null(), false
+	}
+
+	endHour := types.Int64Null()
+	if !window.JSON.EndHour.IsMissing() {
+		endHour = types.Int64Value(window.EndHour)
+	}
+
+	return types.Int64Value(window.StartHour), endHour, true
 }

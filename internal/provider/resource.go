@@ -270,13 +270,13 @@ func (r *runnerResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	params := gitpod.RunnerUpdateParams{
-		RunnerID: gitpod.F(plan.ID.ValueString()),
-		Name:     gitpod.F(plan.Name.ValueString()),
+	var prior runnerModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	if plan.Spec != nil {
-		params.Spec = gitpod.F(buildUpdateSpecParam(plan.Spec))
-	}
+
+	params := buildRunnerUpdateParams(plan, prior)
 
 	_, err := r.client.Runners.Update(ctx, params)
 	if err != nil {
@@ -449,40 +449,6 @@ func buildMetricsParam(m *runnerMetricsModel) gitpod.MetricsConfigurationParam {
 	return p
 }
 
-func buildUpdateSpecParam(spec *runnerSpecModel) gitpod.RunnerUpdateParamsSpec {
-	p := gitpod.RunnerUpdateParamsSpec{}
-	if !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
-		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
-	}
-	if spec.Configuration != nil {
-		p.Configuration = gitpod.F(buildUpdateConfigParam(spec.Configuration))
-	}
-	return p
-}
-
-func buildUpdateConfigParam(cfg *runnerConfigModel) gitpod.RunnerUpdateParamsSpecConfiguration {
-	p := gitpod.RunnerUpdateParamsSpecConfiguration{}
-	if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
-		p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
-	}
-	if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
-		p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
-	}
-	if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
-		p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
-	}
-	if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
-		p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
-	}
-	if cfg.Metrics != nil {
-		p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
-	}
-	if cfg.UpdateWindow != nil {
-		p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
-	}
-	return p
-}
-
 func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpecConfigurationMetrics {
 	p := gitpod.RunnerUpdateParamsSpecConfigurationMetrics{}
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
@@ -501,6 +467,96 @@ func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpe
 		p.Password = gitpod.F(m.Password.ValueString())
 	}
 	return p
+}
+
+func buildRunnerUpdateParams(plan, prior runnerModel) gitpod.RunnerUpdateParams {
+	params := gitpod.RunnerUpdateParams{
+		RunnerID: gitpod.F(plan.ID.ValueString()),
+		Name:     gitpod.F(plan.Name.ValueString()),
+	}
+
+	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec); sendSpec {
+		params.Spec = gitpod.F(spec)
+	}
+
+	return params
+}
+
+func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel) (gitpod.RunnerUpdateParamsSpec, bool) {
+	p := gitpod.RunnerUpdateParamsSpec{}
+	sendSpec := false
+
+	if spec != nil && !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
+		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
+		sendSpec = true
+	}
+
+	var priorCfg *runnerConfigModel
+	if prior != nil {
+		priorCfg = prior.Configuration
+	}
+
+	if cfg, sendConfig := buildRunnerUpdateConfigParam(specConfiguration(spec), priorCfg); sendConfig {
+		p.Configuration = gitpod.F(cfg)
+		sendSpec = true
+	}
+
+	return p, sendSpec
+}
+
+func buildRunnerUpdateConfigParam(cfg, prior *runnerConfigModel) (gitpod.RunnerUpdateParamsSpecConfiguration, bool) {
+	p := gitpod.RunnerUpdateParamsSpecConfiguration{}
+	sendConfig := false
+
+	if cfg != nil {
+		if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
+			p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
+			sendConfig = true
+		}
+		if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
+			p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
+			sendConfig = true
+		}
+		if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
+			p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
+			sendConfig = true
+		}
+		if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
+			p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
+			sendConfig = true
+		}
+		if cfg.Metrics != nil {
+			p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
+			sendConfig = true
+		}
+		if cfg.UpdateWindow != nil {
+			p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+			sendConfig = true
+		}
+	}
+
+	if shouldClearRunnerUpdateWindow(cfg, prior) {
+		p.UpdateWindow = gitpod.F(gitpod.UpdateWindowParam{})
+		sendConfig = true
+	}
+
+	return p, sendConfig
+}
+
+func specConfiguration(spec *runnerSpecModel) *runnerConfigModel {
+	if spec == nil {
+		return nil
+	}
+
+	return spec.Configuration
+}
+
+func shouldClearRunnerUpdateWindow(cfg, prior *runnerConfigModel) bool {
+	if prior == nil || prior.UpdateWindow == nil {
+		return false
+	}
+
+	return cfg == nil || cfg.UpdateWindow == nil
 }
 
 func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
@@ -552,10 +608,10 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 					Password: prior.Spec.Configuration.Metrics.Password,
 				}
 			}
-			if runner.Spec.Configuration.UpdateWindow.JSON.RawJSON() != "" {
+			if startHour, endHour, ok := mapUpdateWindowValues(runner.Spec.Configuration.UpdateWindow); ok {
 				cfg.UpdateWindow = &runnerUpdateWindowModel{
-					StartHour: types.Int64Value(runner.Spec.Configuration.UpdateWindow.StartHour),
-					EndHour:   types.Int64Value(runner.Spec.Configuration.UpdateWindow.EndHour),
+					StartHour: startHour,
+					EndHour:   endHour,
 				}
 			} else if prior.Spec.Configuration.UpdateWindow != nil {
 				// API returned no update_window but user had one configured — it was cleared

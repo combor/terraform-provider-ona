@@ -209,10 +209,10 @@ func mapRunnerConfigToDataSourceModel(runner gitpod.Runner) *runnerDataSourceCon
 			Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
 		},
 	}
-	if runner.Spec.Configuration.UpdateWindow.JSON.RawJSON() != "" {
+	if startHour, endHour, ok := mapUpdateWindowValues(runner.Spec.Configuration.UpdateWindow); ok {
 		cfg.UpdateWindow = &runnerDataSourceUpdateWindowModel{
-			StartHour: types.Int64Value(runner.Spec.Configuration.UpdateWindow.StartHour),
-			EndHour:   types.Int64Value(runner.Spec.Configuration.UpdateWindow.EndHour),
+			StartHour: startHour,
+			EndHour:   endHour,
 		}
 	}
 	return cfg

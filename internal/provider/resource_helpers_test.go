@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -120,6 +121,101 @@ func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
 	assert.True(t, got.Metrics.Value.Username.Present)
 	assert.Equal(t, "metrics-user", got.Metrics.Value.Username.Value)
 	assert.False(t, got.Metrics.Value.Password.Present)
+}
+
+func TestBuildRunnerUpdateConfigParam_ClearsUpdateWindowWhenRemovedFromConfiguration(t *testing.T) {
+	cfg := &runnerConfigModel{
+		AutoUpdate: types.BoolValue(true),
+	}
+	prior := &runnerConfigModel{
+		UpdateWindow: &runnerUpdateWindowModel{
+			StartHour: types.Int64Value(22),
+		},
+	}
+
+	got, present := buildRunnerUpdateConfigParam(cfg, prior)
+
+	assert.True(t, present)
+	assert.True(t, got.AutoUpdate.Present)
+	assert.Equal(t, true, got.AutoUpdate.Value)
+	assert.True(t, got.UpdateWindow.Present)
+	assert.False(t, got.UpdateWindow.Value.StartHour.Present)
+	assert.False(t, got.UpdateWindow.Value.EndHour.Present)
+}
+
+func TestBuildRunnerUpdateParams_ClearsUpdateWindowWhenSpecIsRemoved(t *testing.T) {
+	plan := runnerModel{
+		ID:   types.StringValue("runner-123"),
+		Name: types.StringValue("runner-name"),
+	}
+	prior := runnerModel{
+		Spec: &runnerSpecModel{
+			Configuration: &runnerConfigModel{
+				UpdateWindow: &runnerUpdateWindowModel{
+					StartHour: types.Int64Value(22),
+				},
+			},
+		},
+	}
+
+	got := buildRunnerUpdateParams(plan, prior)
+
+	assert.True(t, got.Spec.Present)
+	assert.True(t, got.Spec.Value.Configuration.Present)
+	assert.True(t, got.Spec.Value.Configuration.Value.UpdateWindow.Present)
+	assert.False(t, got.Spec.Value.Configuration.Value.UpdateWindow.Value.StartHour.Present)
+	assert.False(t, got.Spec.Value.Configuration.Value.UpdateWindow.Value.EndHour.Present)
+}
+
+func TestMapUpdateWindowValues_MissingEndHourRemainsNull(t *testing.T) {
+	var window gitpod.UpdateWindow
+	require.NoError(t, json.Unmarshal([]byte(`{"startHour":22}`), &window))
+
+	startHour, endHour, ok := mapUpdateWindowValues(window)
+
+	assert.True(t, ok)
+	assert.Equal(t, int64(22), startHour.ValueInt64())
+	assert.True(t, endHour.IsNull())
+}
+
+func TestMapUpdateWindowValues_ExplicitZeroEndHourRemainsPresent(t *testing.T) {
+	var window gitpod.UpdateWindow
+	require.NoError(t, json.Unmarshal([]byte(`{"startHour":22,"endHour":0}`), &window))
+
+	startHour, endHour, ok := mapUpdateWindowValues(window)
+
+	assert.True(t, ok)
+	assert.Equal(t, int64(22), startHour.ValueInt64())
+	assert.Equal(t, int64(0), endHour.ValueInt64())
+}
+
+func TestMapRunnerToModel_UpdateWindowMissingEndHourRemainsNull(t *testing.T) {
+	var cfg gitpod.RunnerConfiguration
+	require.NoError(t, json.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), &cfg))
+
+	prior := runnerModel{
+		Spec: &runnerSpecModel{
+			Configuration: &runnerConfigModel{},
+		},
+	}
+	runner := gitpod.Runner{
+		RunnerID: "runner-123",
+		Name:     "runner-name",
+		Provider: gitpod.RunnerProviderAwsEc2,
+		Spec: gitpod.RunnerSpec{
+			DesiredPhase:  gitpod.RunnerPhaseActive,
+			Variant:       gitpod.RunnerVariantStandard,
+			Configuration: cfg,
+		},
+	}
+
+	got := mapRunnerToModel(runner, prior)
+
+	require.NotNil(t, got.Spec)
+	require.NotNil(t, got.Spec.Configuration)
+	require.NotNil(t, got.Spec.Configuration.UpdateWindow)
+	assert.Equal(t, int64(22), got.Spec.Configuration.UpdateWindow.StartHour.ValueInt64())
+	assert.True(t, got.Spec.Configuration.UpdateWindow.EndHour.IsNull())
 }
 
 func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
