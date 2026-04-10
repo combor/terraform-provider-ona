@@ -48,12 +48,18 @@ type runnerSpecModel struct {
 }
 
 type runnerConfigModel struct {
-	AutoUpdate                    types.Bool          `tfsdk:"auto_update"`
-	DevcontainerImageCacheEnabled types.Bool          `tfsdk:"devcontainer_image_cache_enabled"`
-	Region                        types.String        `tfsdk:"region"`
-	ReleaseChannel                types.String        `tfsdk:"release_channel"`
-	LogLevel                      types.String        `tfsdk:"log_level"`
-	Metrics                       *runnerMetricsModel `tfsdk:"metrics"`
+	AutoUpdate                    types.Bool               `tfsdk:"auto_update"`
+	DevcontainerImageCacheEnabled types.Bool               `tfsdk:"devcontainer_image_cache_enabled"`
+	Region                        types.String             `tfsdk:"region"`
+	ReleaseChannel                types.String             `tfsdk:"release_channel"`
+	LogLevel                      types.String             `tfsdk:"log_level"`
+	Metrics                       *runnerMetricsModel      `tfsdk:"metrics"`
+	UpdateWindow                  *runnerUpdateWindowModel `tfsdk:"update_window"`
+}
+
+type runnerUpdateWindowModel struct {
+	StartHour types.Int64 `tfsdk:"start_hour"`
+	EndHour   types.Int64 `tfsdk:"end_hour"`
 }
 
 type runnerMetricsModel struct {
@@ -143,6 +149,21 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 									"password": schema.StringAttribute{
 										Optional:  true,
 										Sensitive: true,
+									},
+								},
+							},
+							"update_window": schema.SingleNestedAttribute{
+								Optional:            true,
+								MarkdownDescription: "Daily time window (UTC) during which auto-updates are allowed. Must be at least 2 hours. Overnight windows supported (e.g. start_hour=22, end_hour=4).",
+								Attributes: map[string]schema.Attribute{
+									"start_hour": schema.Int64Attribute{
+										Required:            true,
+										MarkdownDescription: "Start of the update window as a UTC hour (0-23).",
+									},
+									"end_hour": schema.Int64Attribute{
+										Optional:            true,
+										Computed:            true,
+										MarkdownDescription: "End of the update window as a UTC hour (0-23). Defaults to start_hour + 2.",
 									},
 								},
 							},
@@ -387,6 +408,19 @@ func buildConfigParam(cfg *runnerConfigModel) gitpod.RunnerConfigurationParam {
 	if cfg.Metrics != nil {
 		p.Metrics = gitpod.F(buildMetricsParam(cfg.Metrics))
 	}
+	if cfg.UpdateWindow != nil {
+		p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+	}
+	return p
+}
+
+func buildUpdateWindowParam(w *runnerUpdateWindowModel) gitpod.UpdateWindowParam {
+	p := gitpod.UpdateWindowParam{
+		StartHour: gitpod.F(w.StartHour.ValueInt64()),
+	}
+	if !w.EndHour.IsNull() && !w.EndHour.IsUnknown() {
+		p.EndHour = gitpod.F(w.EndHour.ValueInt64())
+	}
 	return p
 }
 
@@ -434,6 +468,9 @@ func buildUpdateConfigParam(cfg *runnerConfigModel) gitpod.RunnerUpdateParamsSpe
 	}
 	if cfg.Metrics != nil {
 		p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
+	}
+	if cfg.UpdateWindow != nil {
+		p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
 	}
 	return p
 }
@@ -502,6 +539,15 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 					// Preserve password from prior state — API doesn't return it
 					Password: prior.Spec.Configuration.Metrics.Password,
 				}
+			}
+			if runner.Spec.Configuration.UpdateWindow.JSON.RawJSON() != "" {
+				cfg.UpdateWindow = &runnerUpdateWindowModel{
+					StartHour: types.Int64Value(runner.Spec.Configuration.UpdateWindow.StartHour),
+					EndHour:   types.Int64Value(runner.Spec.Configuration.UpdateWindow.EndHour),
+				}
+			} else if prior.Spec.Configuration.UpdateWindow != nil {
+				// API returned no update_window but user had one configured — it was cleared
+				cfg.UpdateWindow = nil
 			}
 			spec.Configuration = cfg
 		}

@@ -88,6 +88,20 @@ func (d *runnerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 									"username": schema.StringAttribute{Computed: true},
 								},
 							},
+							"update_window": schema.SingleNestedAttribute{
+								Computed:            true,
+								MarkdownDescription: "Daily time window (UTC) during which auto-updates are allowed.",
+								Attributes: map[string]schema.Attribute{
+									"start_hour": schema.Int64Attribute{
+										Computed:            true,
+										MarkdownDescription: "Start of the update window as a UTC hour (0-23).",
+									},
+									"end_hour": schema.Int64Attribute{
+										Computed:            true,
+										MarkdownDescription: "End of the update window as a UTC hour (0-23).",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -158,20 +172,9 @@ func mapRunnerToDataSourceModel(runner gitpod.Runner) runnerDataSourceModel {
 	}
 
 	m.Spec = &runnerDataSourceSpecModel{
-		DesiredPhase: stringValueOrNull(string(runner.Spec.DesiredPhase)),
-		Variant:      stringValueOrNull(string(runner.Spec.Variant)),
-		Configuration: &runnerDataSourceConfigModel{
-			AutoUpdate:                    types.BoolValue(runner.Spec.Configuration.AutoUpdate),
-			DevcontainerImageCacheEnabled: types.BoolValue(runner.Spec.Configuration.DevcontainerImageCacheEnabled),
-			Region:                        stringValueOrNull(runner.Spec.Configuration.Region),
-			ReleaseChannel:                stringValueOrNull(string(runner.Spec.Configuration.ReleaseChannel)),
-			LogLevel:                      stringValueOrNull(string(runner.Spec.Configuration.LogLevel)),
-			Metrics: &runnerDataSourceMetricsModel{
-				Enabled:  types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-				URL:      stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-				Username: stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
-			},
-		},
+		DesiredPhase:  stringValueOrNull(string(runner.Spec.DesiredPhase)),
+		Variant:       stringValueOrNull(string(runner.Spec.Variant)),
+		Configuration: mapRunnerConfigToDataSourceModel(runner),
 	}
 
 	statusAttrTypes := map[string]attr.Type{
@@ -189,6 +192,28 @@ func mapRunnerToDataSourceModel(runner gitpod.Runner) runnerDataSourceModel {
 	m.Status, _ = types.ObjectValue(statusAttrTypes, statusValues)
 
 	return m
+}
+
+func mapRunnerConfigToDataSourceModel(runner gitpod.Runner) *runnerDataSourceConfigModel {
+	cfg := &runnerDataSourceConfigModel{
+		AutoUpdate:                    types.BoolValue(runner.Spec.Configuration.AutoUpdate),
+		DevcontainerImageCacheEnabled: types.BoolValue(runner.Spec.Configuration.DevcontainerImageCacheEnabled),
+		Region:                        stringValueOrNull(runner.Spec.Configuration.Region),
+		ReleaseChannel:                stringValueOrNull(string(runner.Spec.Configuration.ReleaseChannel)),
+		LogLevel:                      stringValueOrNull(string(runner.Spec.Configuration.LogLevel)),
+		Metrics: &runnerDataSourceMetricsModel{
+			Enabled:  types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
+			URL:      stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
+			Username: stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+		},
+	}
+	if runner.Spec.Configuration.UpdateWindow.JSON.RawJSON() != "" {
+		cfg.UpdateWindow = &runnerDataSourceUpdateWindowModel{
+			StartHour: types.Int64Value(runner.Spec.Configuration.UpdateWindow.StartHour),
+			EndHour:   types.Int64Value(runner.Spec.Configuration.UpdateWindow.EndHour),
+		}
+	}
+	return cfg
 }
 
 // Data source models — separate from resource models since all fields
@@ -210,12 +235,18 @@ type runnerDataSourceSpecModel struct {
 }
 
 type runnerDataSourceConfigModel struct {
-	AutoUpdate                    types.Bool                    `tfsdk:"auto_update"`
-	DevcontainerImageCacheEnabled types.Bool                    `tfsdk:"devcontainer_image_cache_enabled"`
-	Region                        types.String                  `tfsdk:"region"`
-	ReleaseChannel                types.String                  `tfsdk:"release_channel"`
-	LogLevel                      types.String                  `tfsdk:"log_level"`
-	Metrics                       *runnerDataSourceMetricsModel `tfsdk:"metrics"`
+	AutoUpdate                    types.Bool                         `tfsdk:"auto_update"`
+	DevcontainerImageCacheEnabled types.Bool                         `tfsdk:"devcontainer_image_cache_enabled"`
+	Region                        types.String                       `tfsdk:"region"`
+	ReleaseChannel                types.String                       `tfsdk:"release_channel"`
+	LogLevel                      types.String                       `tfsdk:"log_level"`
+	Metrics                       *runnerDataSourceMetricsModel      `tfsdk:"metrics"`
+	UpdateWindow                  *runnerDataSourceUpdateWindowModel `tfsdk:"update_window"`
+}
+
+type runnerDataSourceUpdateWindowModel struct {
+	StartHour types.Int64 `tfsdk:"start_hour"`
+	EndHour   types.Int64 `tfsdk:"end_hour"`
 }
 
 type runnerDataSourceMetricsModel struct {
