@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -41,6 +40,10 @@ func (d *authenticatedIdentityDataSource) Schema(_ context.Context, _ datasource
 				Computed:            true,
 				MarkdownDescription: "Organization ID associated with the authenticated identity.",
 			},
+			"organization_tier": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Organization tier (e.g. plan level) of the authenticated identity.",
+			},
 		},
 	}
 }
@@ -67,20 +70,22 @@ func (d *authenticatedIdentityDataSource) Read(ctx context.Context, _ datasource
 		return
 	}
 
-	state := mapAuthenticatedIdentityToDataSourceModel(getResp.OrganizationID, getResp.Subject)
+	state := mapAuthenticatedIdentityToDataSourceModel(getResp)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapAuthenticatedIdentityToDataSourceModel(organizationID string, subject shared.Subject) authenticatedIdentityDataSourceModel {
+func mapAuthenticatedIdentityToDataSourceModel(resp *gitpod.IdentityGetAuthenticatedIdentityResponse) authenticatedIdentityDataSourceModel {
 	return authenticatedIdentityDataSourceModel{
-		ID:             stringValueOrNull(subject.ID),
-		Principal:      stringValueOrNull(string(subject.Principal)),
-		OrganizationID: stringValueOrNull(organizationID),
+		ID:               stringValueOrNull(resp.Subject.ID),
+		Principal:        stringValueOrNull(string(resp.Subject.Principal)),
+		OrganizationID:   stringValueOrNull(resp.OrganizationID),
+		OrganizationTier: stringValueOrNull(resp.OrganizationTier),
 	}
 }
 
 type authenticatedIdentityDataSourceModel struct {
-	ID             types.String `tfsdk:"id"`
-	Principal      types.String `tfsdk:"principal"`
-	OrganizationID types.String `tfsdk:"organization_id"`
+	ID               types.String `tfsdk:"id"`
+	Principal        types.String `tfsdk:"principal"`
+	OrganizationID   types.String `tfsdk:"organization_id"`
+	OrganizationTier types.String `tfsdk:"organization_tier"`
 }
