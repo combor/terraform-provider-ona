@@ -17,6 +17,8 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 - [Provider Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/index.md)
 - [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
 - [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
+- [Runner SCM Integration Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner_scm_integration.md)
+- [Secret Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/secret.md)
 - [Secret Resource Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/resources/ona_secret/resource.tf)
 - [Secret Import Example](https://github.com/combor/terraform-provider-ona/blob/main/examples/resources/ona_secret/import.sh)
 - [Authenticated Identity Data Source Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/data-sources/authenticated_identity.md)
@@ -34,6 +36,7 @@ Resources:
 
 - `ona_project`
 - `ona_runner`
+- `ona_runner_scm_integration`
 - `ona_secret`
 
 Data sources:
@@ -143,6 +146,7 @@ See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/mai
 
 ```bash
 terraform import ona_runner.example <runner-id>
+terraform import ona_runner_scm_integration.github <scm-integration-id>
 terraform import ona_project.example <project-id>
 terraform import ona_secret.example <project-id>/<secret-id>
 ```

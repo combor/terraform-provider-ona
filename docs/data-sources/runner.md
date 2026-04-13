@@ -53,6 +53,7 @@ Read-Only:
 - `metrics` (Attributes) (see [below for nested schema](#nestedatt--spec--configuration--metrics))
 - `region` (String) Deployment region.
 - `release_channel` (String) Release channel.
+- `update_window` (Attributes) Daily time window (UTC) during which auto-updates are allowed. (see [below for nested schema](#nestedatt--spec--configuration--update_window))
 
 <a id="nestedatt--spec--configuration--metrics"></a>
 ### Nested Schema for `spec.configuration.metrics`
@@ -60,8 +61,18 @@ Read-Only:
 Read-Only:
 
 - `enabled` (Boolean)
+- `managed_metrics_enabled` (Boolean) When true, the runner pushes metrics to the management plane instead of directly to the remote_write endpoint.
 - `url` (String)
 - `username` (String)
+
+
+<a id="nestedatt--spec--configuration--update_window"></a>
+### Nested Schema for `spec.configuration.update_window`
+
+Read-Only:
+
+- `end_hour` (Number) End of the update window as a UTC hour (0-23).
+- `start_hour` (Number) Start of the update window as a UTC hour (0-23).
 
 
 

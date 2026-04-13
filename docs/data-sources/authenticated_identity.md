@@ -23,4 +23,5 @@ data "ona_authenticated_identity" "current" {}
 
 - `id` (String) Authenticated subject ID.
 - `organization_id` (String) Organization ID associated with the authenticated identity.
+- `organization_tier` (String) Organization tier (e.g. plan level) of the authenticated identity.
 - `principal` (String) Authenticated subject principal.

@@ -69,6 +69,7 @@ Optional:
 - `metrics` (Attributes) (see [below for nested schema](#nestedatt--spec--configuration--metrics))
 - `region` (String) Deployment region.
 - `release_channel` (String) Release channel (`RUNNER_RELEASE_CHANNEL_STABLE`, `RUNNER_RELEASE_CHANNEL_LATEST`).
+- `update_window` (Attributes) Daily time window (UTC) during which auto-updates are allowed. Must be at least 2 hours. Overnight windows supported (e.g. start_hour=22, end_hour=4). (see [below for nested schema](#nestedatt--spec--configuration--update_window))
 
 <a id="nestedatt--spec--configuration--metrics"></a>
 ### Nested Schema for `spec.configuration.metrics`
@@ -76,9 +77,22 @@ Optional:
 Optional:
 
 - `enabled` (Boolean)
+- `managed_metrics_enabled` (Boolean) When true, the runner pushes metrics to the management plane instead of directly to the remote_write endpoint.
 - `password` (String, Sensitive)
 - `url` (String)
 - `username` (String)
+
+
+<a id="nestedatt--spec--configuration--update_window"></a>
+### Nested Schema for `spec.configuration.update_window`
+
+Required:
+
+- `start_hour` (Number) Start of the update window as a UTC hour (0-23).
+
+Optional:
+
+- `end_hour` (Number) End of the update window as a UTC hour (0-23). Defaults to start_hour + 2.
 
 
 

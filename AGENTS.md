@@ -39,13 +39,24 @@ act push -j govulncheck -j build -j test
 - In commit messages, explain why the change was made.
 - When a request is ambiguous, ask for clarification instead of guessing. Do not change your answer based on reactions — either stand by your reasoning or honestly say you are unsure.
 
+## Generating documentation
+
+After creating a new resource/data source or modifying an existing schema or example, regenerate the docs:
+
+```bash
+cd tools && go generate ./...
+```
+
+This runs `terraform fmt` on examples and `tfplugindocs` to regenerate `docs/`.
+
 ## Validation checklist
 
 From the repo root, before finishing a change:
 
 1. Run `gofmt -w` on changed Go files
 2. Run tests: `go test ./...`
-3. Run local CI checks: `act push -j govulncheck -j build -j test`
+3. If schemas or examples changed: `cd tools && go generate ./...`
+4. Run local CI checks: `act push -j govulncheck -j build -j test`
 
 ## Running integration tests
 
