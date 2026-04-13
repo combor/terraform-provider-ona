@@ -48,6 +48,7 @@ func (p *onaProvider) Metadata(_ context.Context, _ provider.MetadataRequest, re
 
 func (p *onaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		MarkdownDescription: "Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.com](https://ona.com).",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				Optional:            true,
