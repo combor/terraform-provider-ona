@@ -61,10 +61,18 @@ func TestMapRunnerToDataSourceModel_MapsAllFields(t *testing.T) {
 	assert.Equal(t, int64(12), got.Spec.Configuration.UpdateWindow.EndHour.ValueInt64())
 
 	statusAttrs := got.Status.Attributes()
-	assert.Equal(t, string(gitpod.RunnerPhaseDegraded), statusAttrs["phase"].(types.String).ValueString())
-	assert.Equal(t, "degraded", statusAttrs["message"].(types.String).ValueString())
-	assert.Equal(t, "1.2.3", statusAttrs["version"].(types.String).ValueString())
-	assert.Equal(t, "eu-central-1", statusAttrs["region"].(types.String).ValueString())
+	phase, ok := statusAttrs["phase"].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, string(gitpod.RunnerPhaseDegraded), phase.ValueString())
+	message, ok := statusAttrs["message"].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, "degraded", message.ValueString())
+	version, ok := statusAttrs["version"].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, "1.2.3", version.ValueString())
+	region, ok := statusAttrs["region"].(types.String)
+	require.True(t, ok)
+	assert.Equal(t, "eu-central-1", region.ValueString())
 }
 
 func TestMapRunnerToDataSourceModel_NullOptionalFields(t *testing.T) {
