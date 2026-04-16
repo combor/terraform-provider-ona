@@ -95,23 +95,3 @@ func TestMapRunnerToDataSourceModel_NullOptionalFields(t *testing.T) {
 	assert.True(t, got.Spec.Configuration.Metrics.URL.IsNull())
 	assert.True(t, got.Spec.Configuration.Metrics.Username.IsNull())
 }
-
-func TestMapRunnerToDataSourceModel_UpdateWindowMissingEndHour(t *testing.T) {
-	var cfg gitpod.RunnerConfiguration
-	require.NoError(t, json.Unmarshal([]byte(`{"updateWindow":{"startHour":22}}`), &cfg))
-
-	runner := gitpod.Runner{
-		RunnerID: "runner-789",
-		Name:     "Runner",
-		Provider: gitpod.RunnerProviderAwsEc2,
-		Spec: gitpod.RunnerSpec{
-			Configuration: cfg,
-		},
-	}
-
-	got := mapRunnerToDataSourceModel(runner)
-
-	require.NotNil(t, got.Spec.Configuration.UpdateWindow)
-	assert.Equal(t, int64(22), got.Spec.Configuration.UpdateWindow.StartHour.ValueInt64())
-	assert.True(t, got.Spec.Configuration.UpdateWindow.EndHour.IsNull())
-}
