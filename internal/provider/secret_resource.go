@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -118,14 +117,8 @@ func (r *secretResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 }
 
 func (r *secretResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -179,8 +172,7 @@ func (r *secretResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	secret, err := r.findSecretByID(ctx, state.ProjectID.ValueString(), state.ID.ValueString())
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -246,8 +238,7 @@ func (r *secretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		SecretID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			return
 		}
 

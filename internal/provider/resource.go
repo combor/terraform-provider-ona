@@ -2,12 +2,10 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -190,13 +188,8 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 }
 
 func (r *runnerResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 	r.client = client
@@ -250,8 +243,7 @@ func (r *runnerResource) Read(ctx context.Context, req resource.ReadRequest, res
 		RunnerID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -313,8 +305,7 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 	_, err := r.client.Runners.Delete(ctx, deleteParams)
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			return // already gone
 		}
 		resp.Diagnostics.AddError("Failed to delete runner", err.Error())
@@ -347,8 +338,7 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 			RunnerID: gitpod.F(runnerID),
 		})
 		if err != nil {
-			var apiErr *gitpod.Error
-			if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+			if isAPINotFound(err) {
 				return nil, nil // Delete completion is observed as 404 in practice; RUNNER_PHASE_DELETED is not returned.
 			}
 			return nil, fmt.Errorf("error polling runner status: %w", err)
@@ -566,11 +556,7 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 		ProviderType: types.StringValue(string(runner.Provider)),
 	}
 
-	if runner.RunnerManagerID != "" {
-		m.RunnerManagerID = types.StringValue(runner.RunnerManagerID)
-	} else {
-		m.RunnerManagerID = types.StringNull()
-	}
+	m.RunnerManagerID = stringValueOrNull(runner.RunnerManagerID)
 
 	// Map spec — preserve user-set values the API doesn't return
 	if prior.Spec != nil {
@@ -622,20 +608,7 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 		m.Spec = spec
 	}
 
-	// Map status as types.Object
-	statusAttrTypes := map[string]attr.Type{
-		"phase":   types.StringType,
-		"message": types.StringType,
-		"version": types.StringType,
-		"region":  types.StringType,
-	}
-	statusValues := map[string]attr.Value{
-		"phase":   types.StringValue(string(runner.Status.Phase)),
-		"message": types.StringValue(runner.Status.Message),
-		"version": types.StringValue(runner.Status.Version),
-		"region":  types.StringValue(runner.Status.Region),
-	}
-	m.Status, _ = types.ObjectValue(statusAttrTypes, statusValues)
+	m.Status = runnerStatusObjectValue(runner.Status)
 
 	return m
 }

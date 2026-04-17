@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -103,14 +101,8 @@ func (r *runnerScmIntegrationResource) Schema(_ context.Context, _ resource.Sche
 }
 
 func (r *runnerScmIntegrationResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -176,8 +168,7 @@ func (r *runnerScmIntegrationResource) Read(ctx context.Context, req resource.Re
 		ID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -264,8 +255,7 @@ func (r *runnerScmIntegrationResource) Delete(ctx context.Context, req resource.
 		ID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			return
 		}
 

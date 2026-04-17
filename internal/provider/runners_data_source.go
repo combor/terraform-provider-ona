@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -86,14 +85,8 @@ func (d *runnersDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 }
 
 func (d *runnersDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -175,35 +168,14 @@ func mapRunnersToDataSourceModel(runners []gitpod.Runner) runnersDataSourceModel
 		Runners: make([]runnerListItemModel, 0, len(runners)),
 	}
 
-	statusAttrTypes := map[string]attr.Type{
-		"phase":   types.StringType,
-		"message": types.StringType,
-		"version": types.StringType,
-		"region":  types.StringType,
-	}
-
 	for _, runner := range runners {
-		statusValues := map[string]attr.Value{
-			"phase":   types.StringValue(string(runner.Status.Phase)),
-			"message": types.StringValue(runner.Status.Message),
-			"version": types.StringValue(runner.Status.Version),
-			"region":  types.StringValue(runner.Status.Region),
-		}
-		status, _ := types.ObjectValue(statusAttrTypes, statusValues)
-
-		item := runnerListItemModel{
-			ID:           types.StringValue(runner.RunnerID),
-			Name:         types.StringValue(runner.Name),
-			ProviderType: types.StringValue(string(runner.Provider)),
-			Status:       status,
-		}
-		if runner.RunnerManagerID != "" {
-			item.RunnerManagerID = types.StringValue(runner.RunnerManagerID)
-		} else {
-			item.RunnerManagerID = types.StringNull()
-		}
-
-		state.Runners = append(state.Runners, item)
+		state.Runners = append(state.Runners, runnerListItemModel{
+			ID:              types.StringValue(runner.RunnerID),
+			Name:            types.StringValue(runner.Name),
+			ProviderType:    types.StringValue(string(runner.Provider)),
+			RunnerManagerID: stringValueOrNull(runner.RunnerManagerID),
+			Status:          runnerStatusObjectValue(runner.Status),
+		})
 	}
 
 	return state
