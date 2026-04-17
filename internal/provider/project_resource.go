@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
@@ -323,14 +322,8 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 }
 
 func (r *projectResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -422,8 +415,7 @@ func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, re
 		ProjectID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -478,8 +470,7 @@ func (r *projectResource) Delete(ctx context.Context, req resource.DeleteRequest
 		ProjectID: gitpod.F(state.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			return
 		}
 

@@ -2,11 +2,9 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -121,13 +119,8 @@ func (d *runnerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 }
 
 func (d *runnerDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 	d.client = client
@@ -144,8 +137,7 @@ func (d *runnerDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		RunnerID: gitpod.F(config.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Runner not found",
 				fmt.Sprintf("No runner found with ID %s", config.ID.ValueString()))
 			return
@@ -166,11 +158,7 @@ func mapRunnerToDataSourceModel(runner gitpod.Runner) runnerDataSourceModel {
 		ProviderType: types.StringValue(string(runner.Provider)),
 	}
 
-	if runner.RunnerManagerID != "" {
-		m.RunnerManagerID = types.StringValue(runner.RunnerManagerID)
-	} else {
-		m.RunnerManagerID = types.StringNull()
-	}
+	m.RunnerManagerID = stringValueOrNull(runner.RunnerManagerID)
 
 	m.Spec = &runnerDataSourceSpecModel{
 		DesiredPhase:  stringValueOrNull(string(runner.Spec.DesiredPhase)),
@@ -178,19 +166,7 @@ func mapRunnerToDataSourceModel(runner gitpod.Runner) runnerDataSourceModel {
 		Configuration: mapRunnerConfigToDataSourceModel(runner),
 	}
 
-	statusAttrTypes := map[string]attr.Type{
-		"phase":   types.StringType,
-		"message": types.StringType,
-		"version": types.StringType,
-		"region":  types.StringType,
-	}
-	statusValues := map[string]attr.Value{
-		"phase":   types.StringValue(string(runner.Status.Phase)),
-		"message": types.StringValue(runner.Status.Message),
-		"version": types.StringValue(runner.Status.Version),
-		"region":  types.StringValue(runner.Status.Region),
-	}
-	m.Status, _ = types.ObjectValue(statusAttrTypes, statusValues)
+	m.Status = runnerStatusObjectValue(runner.Status)
 
 	return m
 }

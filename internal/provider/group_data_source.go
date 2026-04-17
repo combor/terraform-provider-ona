@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
@@ -70,14 +69,8 @@ func (d *groupDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 }
 
 func (d *groupDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -95,8 +88,7 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		GroupID: gitpod.F(config.ID.ValueString()),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Group not found",
 				fmt.Sprintf("No group found with ID %s", config.ID.ValueString()))
 			return

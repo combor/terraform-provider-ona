@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 
@@ -75,14 +74,8 @@ func (d *runnerEnvironmentClassesDataSource) Schema(_ context.Context, _ datasou
 }
 
 func (d *runnerEnvironmentClassesDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	client, ok := req.ProviderData.(*gitpod.Client)
+	client, ok := clientFromProviderData(req.ProviderData, &resp.Diagnostics)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data type",
-			fmt.Sprintf("Expected *gitpod.Client, got %T", req.ProviderData))
 		return
 	}
 
@@ -102,8 +95,7 @@ func (d *runnerEnvironmentClassesDataSource) Read(ctx context.Context, req datas
 		RunnerID: gitpod.F(runnerID),
 	})
 	if err != nil {
-		var apiErr *gitpod.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Runner not found",
 				fmt.Sprintf("No runner found with ID %s", runnerID))
 			return
