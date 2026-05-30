@@ -168,6 +168,7 @@ func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewProjectResource,
 		NewRunnerResource,
+		NewRunnerEnvironmentClassResource,
 		NewRunnerScmIntegrationResource,
 		NewSecretResource,
 	}

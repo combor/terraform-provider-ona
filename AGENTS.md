@@ -9,7 +9,7 @@ Terraform provider for managing Gitpod resources on ona.com. The provider uses t
 - Provider registry address: `registry.terraform.io/combor/ona`
 - Provider type name: `ona`
 - Provider configuration: `api_key`, `base_url`, `max_retries`, `request_timeout`
-- Resources: `ona_project`, `ona_runner`, `ona_runner_scm_integration`, `ona_secret`
+- Resources: `ona_project`, `ona_runner`, `ona_runner_environment_class`, `ona_runner_scm_integration`, `ona_secret`
 - Data sources: `ona_authenticated_identity`, `ona_group`, `ona_groups`, `ona_project`, `ona_runner`, `ona_runner_environment_classes`, `ona_runners`, `ona_runner_token`
 
 ## Build and test commands
@@ -124,7 +124,7 @@ act push -j integration \
   -s RUNNER_MANAGER_ID=01984227-2946-7e40-a982-2f427741f5da
 ```
 
-This runs the local `integration` matrix for Terraform `1.7.*` and `1.14.*` against the real Gitpod API. It first applies and destroys `examples/cleanup`, then applies and destroys the main `examples/` configuration, which currently exercises `ona_runner`, `ona_project`, and `ona_secret`. (`ona_runner_scm_integration` is not included because SCM integrations cannot be added to Gitpod-managed runners.)
+This runs the local `integration` matrix for Terraform `1.7.*` and `1.14.*` against the real Gitpod API. It first applies and destroys `examples/cleanup`, then applies and destroys the main `examples/` configuration, which currently exercises `ona_runner`, `ona_project`, and `ona_secret`. (`ona_runner_scm_integration` and `ona_runner_environment_class` are not included because they cannot be added to Gitpod-managed runners.)
 
 Requires `GITPOD_API_KEY` to be set. The integration job also requires `RUNNER_MANAGER_ID`.
 
