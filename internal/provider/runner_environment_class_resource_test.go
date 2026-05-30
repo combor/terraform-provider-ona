@@ -4,9 +4,59 @@ import (
 	"testing"
 
 	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEnvClassPlanWithID(t *testing.T) {
+	t.Run("sets id and resolves unknown computed values to null", func(t *testing.T) {
+		plan := runnerEnvironmentClassModel{
+			RunnerID:    types.StringValue("runner-1"),
+			DisplayName: types.StringValue("Small"),
+			Description: types.StringUnknown(),
+			Enabled:     types.BoolUnknown(),
+			Configuration: &runnerEnvironmentClassConfigurationModel{
+				InstanceType: types.StringValue("m6i.large"),
+				DiskSizeGB:   types.Int64Unknown(),
+				Spot:         types.BoolUnknown(),
+			},
+		}
+
+		got := envClassPlanWithID(plan, "env-class-123")
+
+		assert.Equal(t, "env-class-123", got.ID.ValueString())
+		assert.Equal(t, "runner-1", got.RunnerID.ValueString())
+		assert.True(t, got.Description.IsNull())
+		assert.True(t, got.Enabled.IsNull())
+		require.NotNil(t, got.Configuration)
+		assert.Equal(t, "m6i.large", got.Configuration.InstanceType.ValueString())
+		assert.True(t, got.Configuration.DiskSizeGB.IsNull())
+		assert.True(t, got.Configuration.Spot.IsNull())
+	})
+
+	t.Run("preserves known values without mutating the plan's configuration", func(t *testing.T) {
+		cfg := &runnerEnvironmentClassConfigurationModel{
+			InstanceType: types.StringValue("t3.medium"),
+			DiskSizeGB:   types.Int64Value(50),
+			Spot:         types.BoolValue(true),
+		}
+		plan := runnerEnvironmentClassModel{
+			DisplayName:   types.StringValue("Keep"),
+			Description:   types.StringValue("desc"),
+			Enabled:       types.BoolValue(false),
+			Configuration: cfg,
+		}
+
+		got := envClassPlanWithID(plan, "env-class-x")
+
+		assert.Equal(t, "desc", got.Description.ValueString())
+		assert.False(t, got.Enabled.ValueBool())
+		assert.Equal(t, int64(50), got.Configuration.DiskSizeGB.ValueInt64())
+		assert.True(t, got.Configuration.Spot.ValueBool())
+		assert.NotSame(t, cfg, got.Configuration)
+	})
+}
 
 func TestMapEnvironmentClassToModel_AWSEC2Configuration(t *testing.T) {
 	environmentClass := shared.EnvironmentClass{

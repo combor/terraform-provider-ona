@@ -28,19 +28,3 @@ resource "ona_runner_environment_class" "aws_ec2_spot_example" {
 
   enabled = true
 }
-
-# Managed Runner Environment Class (Ona Cloud)
-# For runners with provider_type = "RUNNER_PROVIDER_MANAGED"
-resource "ona_runner_environment_class" "managed_example" {
-  runner_id    = "<managed-runner-id>"
-  display_name = "Regular"
-  description  = "4 vCPU / 16 GiB / 80 GiB disk"
-
-  configuration = {
-    instance_type = "m6i.xlarge"
-    disk_size_gb  = 80
-    spot          = false
-  }
-
-  enabled = true
-}

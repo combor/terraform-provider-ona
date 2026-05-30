@@ -51,11 +51,11 @@ func (r *runnerEnvironmentClassResource) Metadata(_ context.Context, req resourc
 
 func (r *runnerEnvironmentClassResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: `Manages an environment class on a Gitpod runner.
+		MarkdownDescription: `Manages an environment class on a self-hosted Gitpod runner (e.g. AWS EC2).
 
-**Supported Runner Types**: This resource supports AWS EC2 (RUNNER_PROVIDER_AWS_EC2) and Managed (RUNNER_PROVIDER_MANAGED) runners only.
+**Supported Runner Types**: Self-hosted runners only. Managed (RUNNER_PROVIDER_MANAGED) runners do not support custom environment classes; the API rejects CreateEnvironmentClass for them with a 403.
 
-**Note**: Environment classes cannot be deleted via the API. Instead, they are disabled to prevent their use.`,
+**Note**: Environment classes cannot be deleted via the API; on destroy they are disabled instead. The configuration fields are immutable, so changing any of them replaces the class and leaves the previous one behind (disabled).`,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -79,7 +79,7 @@ func (r *runnerEnvironmentClassResource) Schema(_ context.Context, _ resource.Sc
 			},
 			"configuration": schema.SingleNestedAttribute{
 				Required:            true,
-				MarkdownDescription: "Environment class configuration for AWS EC2 and Managed runners.",
+				MarkdownDescription: "Environment class configuration for AWS EC2 runners.",
 				Attributes: map[string]schema.Attribute{
 					"instance_type": schema.StringAttribute{
 						Required:            true,
@@ -142,31 +142,37 @@ func (r *runnerEnvironmentClassResource) Create(ctx context.Context, req resourc
 		return
 	}
 
-	// The API does not support setting enabled during creation.
-	// If the user specified enabled=false, update it after creation.
-	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() && !plan.Enabled.ValueBool() {
-		updateParams := gitpod.RunnerConfigurationEnvironmentClassUpdateParams{
-			EnvironmentClassID: gitpod.F(createResp.ID),
-			Enabled:            gitpod.F(false),
-		}
-		_, err = r.client.Runners.Configurations.EnvironmentClasses.Update(ctx, updateParams)
-		if err != nil {
+	// The class now exists. The API has no delete (Delete only disables), so
+	// Create must never return without persisting state or the class is
+	// permanently orphaned. fallback carries the ID if a follow-up call fails.
+	id := createResp.ID
+	fallback := envClassPlanWithID(plan, id)
+
+	// The API ignores enabled during creation; apply the configured value with a
+	// follow-up Update whenever it is set (the create default is not relied on).
+	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() {
+		if _, err = r.client.Runners.Configurations.EnvironmentClasses.Update(ctx, gitpod.RunnerConfigurationEnvironmentClassUpdateParams{
+			EnvironmentClassID: gitpod.F(id),
+			Enabled:            gitpod.F(plan.Enabled.ValueBool()),
+		}); err != nil {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &fallback)...)
 			resp.Diagnostics.AddError("Failed to set enabled state after create", err.Error())
 			return
 		}
 	}
 
-	// Create only returns ID; read back for full state.
-	getResp, err := r.client.Runners.Configurations.EnvironmentClasses.Get(ctx, gitpod.RunnerConfigurationEnvironmentClassGetParams{
-		EnvironmentClassID: gitpod.F(createResp.ID),
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to read environment class after create", err.Error())
-		return
+	// Create only returns the ID; read back for full state. If the read fails,
+	// fall back to the plan so the class is tracked; the next refresh reconciles
+	// computed fields.
+	if getResp, getErr := r.client.Runners.Configurations.EnvironmentClasses.Get(ctx, gitpod.RunnerConfigurationEnvironmentClassGetParams{
+		EnvironmentClassID: gitpod.F(id),
+	}); getErr == nil {
+		state := mapEnvironmentClassToModel(getResp.EnvironmentClass)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	} else {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &fallback)...)
+		resp.Diagnostics.AddWarning("Could not read environment class after create", getErr.Error())
 	}
-
-	state := mapEnvironmentClassToModel(getResp.EnvironmentClass)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *runnerEnvironmentClassResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -261,6 +267,32 @@ func (r *runnerEnvironmentClassResource) Delete(ctx context.Context, req resourc
 
 func (r *runnerEnvironmentClassResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// envClassPlanWithID returns a best-effort model from the plan plus the created
+// ID, resolving computed-and-unknown values to null so it is valid to persist.
+// It keeps a created class tracked when a follow-up call fails (the API has no
+// delete, so an unpersisted class is orphaned permanently).
+func envClassPlanWithID(plan runnerEnvironmentClassModel, id string) runnerEnvironmentClassModel {
+	m := plan
+	m.ID = types.StringValue(id)
+	if m.Description.IsUnknown() {
+		m.Description = types.StringNull()
+	}
+	if m.Enabled.IsUnknown() {
+		m.Enabled = types.BoolNull()
+	}
+	if plan.Configuration != nil {
+		cfg := *plan.Configuration
+		if cfg.DiskSizeGB.IsUnknown() {
+			cfg.DiskSizeGB = types.Int64Null()
+		}
+		if cfg.Spot.IsUnknown() {
+			cfg.Spot = types.BoolNull()
+		}
+		m.Configuration = &cfg
+	}
+	return m
 }
 
 func buildConfigurationFieldValues(cfg *runnerEnvironmentClassConfigurationModel) []shared.FieldValueParam {
