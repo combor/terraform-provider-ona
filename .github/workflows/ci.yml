@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - id: govulncheck
-        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master, uses checkout@v6.0.2 + setup-go@v6.2.0
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0, uses checkout@v6.0.2 + setup-go@v6.2.0
         with:
           cache: false
 
@@ -161,7 +161,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: v2.16.0
+          version: v2.17.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
