@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	gitpod "github.com/gitpod-io/gitpod-sdk-go"
@@ -535,20 +536,23 @@ func buildRunnerUpdateParams(plan, prior runnerModel) gitpod.RunnerUpdateParams 
 		Name:     gitpod.F(plan.Name.ValueString()),
 	}
 
-	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec); sendSpec {
+	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec, plan.ProviderType); sendSpec {
 		params.Spec = gitpod.F(spec)
 	}
 
 	return params
 }
 
-func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel) (gitpod.RunnerUpdateParamsSpec, bool) {
+func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel, providerType types.String) (gitpod.RunnerUpdateParamsSpec, bool) {
 	p := gitpod.RunnerUpdateParamsSpec{}
 	sendSpec := false
+	remoteRunnerProviders := []string{string(gitpod.RunnerProviderAwsEc2), string(gitpod.RunnerProviderGcp), string(gitpod.RunnerProviderManaged)}
 
-	if spec != nil && !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
-		p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
-		sendSpec = true
+	if spec != nil && !slices.Contains(remoteRunnerProviders, providerType.ValueString()) {
+		if !spec.DesiredPhase.IsNull() && !spec.DesiredPhase.IsUnknown() {
+			p.DesiredPhase = gitpod.F(gitpod.RunnerPhase(spec.DesiredPhase.ValueString()))
+			sendSpec = true
+		}
 	}
 
 	var priorCfg *runnerConfigModel
