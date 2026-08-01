@@ -21,8 +21,12 @@ go test ./...
 # Build the provider binary
 go build -o terraform-provider-ona .
 
-# Run the non-release CI jobs used in day-to-day development
-act push -j govulncheck -j build -j test
+# Run the non-release CI jobs used in day-to-day development.
+# One job per invocation: repeated -j flags do not accumulate, only the last
+# one runs. The test job declares `needs: build`, so it pulls in build too.
+act push -j govulncheck
+act push -j build
+act push -j test
 ```
 
 ## Editing guidance
@@ -110,7 +114,8 @@ From the repo root, before finishing a change:
 1. Run `gofmt -w` on changed Go files
 2. Run tests: `go test ./...`
 3. If schemas or examples changed: `cd tools && go generate ./...`
-4. Run local CI checks: `act push -j govulncheck -j build -j test`
+4. Run local CI checks, one job per invocation: `act push -j govulncheck`, then
+   `act push -j build`, then `act push -j test`
 
 ## Running integration tests
 
