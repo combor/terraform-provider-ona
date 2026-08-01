@@ -158,6 +158,19 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+      # Feeds release.header in .goreleaser.yml. The variable is always set,
+      # because GoReleaser errors on an undefined .Env reference; releases
+      # without notes just get an empty header.
+      - name: Load release notes
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          {
+            echo "RELEASE_HEADER<<__RELEASE_HEADER_EOF__"
+            if [ -f "$notes" ]; then
+              cat "$notes"
+            fi
+            echo "__RELEASE_HEADER_EOF__"
+          } >> "$GITHUB_ENV"
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
@@ -166,6 +179,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          RELEASE_HEADER: ${{ env.RELEASE_HEADER }}
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:

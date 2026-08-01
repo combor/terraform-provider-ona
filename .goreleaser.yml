@@ -54,7 +54,19 @@ release:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
+  # Upgrade notes for the tag being released, rendered above the generated
+  # changelog. Populated by the "Load release notes" step in ci.yml from
+  # .github/release-notes/<tag>.md; that step always defines the variable, so
+  # a release without a notes file simply gets an empty header.
+  header: '{{ .Env.RELEASE_HEADER }}'
   # If you want to manually examine the release before its live, uncomment this line:
   # draft: true
 changelog:
   disable: false
+  # Merge commits repeat the branch commits they bring in, and full 40-char
+  # SHAs bury the subject line.
+  abbrev: 7
+  filters:
+    exclude:
+      - '^Merge pull request'
+      - '^Merge branch'
