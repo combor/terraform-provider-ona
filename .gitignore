@@ -3,6 +3,11 @@ dist/
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
+*.tfplan.*
+plan.out
+crash.log
+crash.*.log
 .terraform.lock.hcl
 .cache/
 .terraformrc.local
