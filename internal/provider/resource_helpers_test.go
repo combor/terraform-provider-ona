@@ -11,58 +11,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShouldReconcileDesiredPhase(t *testing.T) {
-	const created = gitpod.RunnerPhaseActive
+// UpdateRunner rejects desiredPhase with a failed_precondition, so the provider
+// must never send it, not even when state carries a phase from a previous read.
+func TestBuildRunnerUpdateParams_NeverSendsDesiredPhase(t *testing.T) {
+	prior := runnerModel{
+		Spec: &runnerSpecModel{DesiredPhase: types.StringValue(string(gitpod.RunnerPhaseActive))},
+	}
 
-	t.Run("nil spec → no reconcile", func(t *testing.T) {
-		assert.False(t, shouldReconcileDesiredPhase(nil, created))
+	t.Run("omitted alongside a configuration change", func(t *testing.T) {
+		plan := runnerModel{
+			ID:           types.StringValue("runner-123"),
+			Name:         types.StringValue("runner-name"),
+			ProviderType: types.StringValue(string(gitpod.RunnerProviderAwsEc2)),
+			Spec: &runnerSpecModel{
+				DesiredPhase:  types.StringValue(string(gitpod.RunnerPhaseInactive)),
+				Configuration: &runnerConfigModel{AutoUpdate: types.BoolValue(true)},
+			},
+		}
+
+		got := buildRunnerUpdateParams(plan, prior)
+
+		assert.True(t, got.Spec.Present)
+		assert.False(t, got.Spec.Value.DesiredPhase.Present)
 	})
 
-	t.Run("null desired_phase → no reconcile", func(t *testing.T) {
-		assert.False(t, shouldReconcileDesiredPhase(&runnerSpecModel{DesiredPhase: types.StringNull()}, created))
-	})
+	t.Run("phase alone leaves the spec out entirely", func(t *testing.T) {
+		plan := runnerModel{
+			ID:           types.StringValue("runner-123"),
+			Name:         types.StringValue("runner-name"),
+			ProviderType: types.StringValue(string(gitpod.RunnerProviderAwsEc2)),
+			Spec: &runnerSpecModel{
+				DesiredPhase: types.StringValue(string(gitpod.RunnerPhaseInactive)),
+			},
+		}
 
-	t.Run("unknown desired_phase → no reconcile", func(t *testing.T) {
-		assert.False(t, shouldReconcileDesiredPhase(&runnerSpecModel{DesiredPhase: types.StringUnknown()}, created))
-	})
+		got := buildRunnerUpdateParams(plan, prior)
 
-	t.Run("matches created phase → no reconcile", func(t *testing.T) {
-		spec := &runnerSpecModel{DesiredPhase: types.StringValue("RUNNER_PHASE_ACTIVE")}
-		assert.False(t, shouldReconcileDesiredPhase(spec, created))
-	})
-
-	t.Run("differs from created phase → reconcile", func(t *testing.T) {
-		spec := &runnerSpecModel{DesiredPhase: types.StringValue("RUNNER_PHASE_INACTIVE")}
-		assert.True(t, shouldReconcileDesiredPhase(spec, created))
-	})
-}
-
-func TestManagedRunnerRejectsPhase(t *testing.T) {
-	managed := types.StringValue(string(gitpod.RunnerProviderManaged))
-	selfHosted := types.StringValue("RUNNER_PROVIDER_AWS_EC2")
-
-	t.Run("managed + INACTIVE → rejected", func(t *testing.T) {
-		assert.True(t, managedRunnerRejectsPhase(managed, types.StringValue("RUNNER_PHASE_INACTIVE")))
-	})
-
-	t.Run("managed + ACTIVE → allowed", func(t *testing.T) {
-		assert.False(t, managedRunnerRejectsPhase(managed, types.StringValue("RUNNER_PHASE_ACTIVE")))
-	})
-
-	t.Run("managed + null → allowed", func(t *testing.T) {
-		assert.False(t, managedRunnerRejectsPhase(managed, types.StringNull()))
-	})
-
-	t.Run("managed + unknown → allowed", func(t *testing.T) {
-		assert.False(t, managedRunnerRejectsPhase(managed, types.StringUnknown()))
-	})
-
-	t.Run("self-hosted + INACTIVE → allowed", func(t *testing.T) {
-		assert.False(t, managedRunnerRejectsPhase(selfHosted, types.StringValue("RUNNER_PHASE_INACTIVE")))
-	})
-
-	t.Run("unknown provider → allowed", func(t *testing.T) {
-		assert.False(t, managedRunnerRejectsPhase(types.StringUnknown(), types.StringValue("RUNNER_PHASE_INACTIVE")))
+		assert.False(t, got.Spec.Present)
+		assert.True(t, got.Name.Present)
 	})
 }
 

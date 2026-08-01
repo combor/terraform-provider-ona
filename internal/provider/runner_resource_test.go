@@ -42,7 +42,8 @@ func TestAccRunnerResource(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 			},
-			// Update name
+			// Update name. desired_phase is read-only, so it stays out of the
+			// config and the update must still succeed with it absent.
 			{
 				Config: `
 					resource "ona_runner" "test" {
@@ -50,7 +51,6 @@ func TestAccRunnerResource(t *testing.T) {
   						provider_type = "RUNNER_PROVIDER_AWS_EC2"
 
 						spec = {
-							desired_phase = "RUNNER_PHASE_ACTIVE"
 							configuration = {
 								region          = "us-west-2"
 								auto_update     = true
@@ -61,7 +61,7 @@ func TestAccRunnerResource(t *testing.T) {
 					}`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("ona_runner.test", "name", "tf-acc-test-updated"),
-					resource.TestCheckResourceAttr("ona_runner.test", "spec.desired_phase", "RUNNER_PHASE_ACTIVE"),
+					resource.TestCheckResourceAttrSet("ona_runner.test", "spec.desired_phase"),
 				),
 			},
 			// Import
@@ -70,7 +70,7 @@ func TestAccRunnerResource(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 			},
-			// Update desired phase
+			// Update configuration
 			{
 				Config: `
 					resource "ona_runner" "test" {
@@ -78,17 +78,16 @@ func TestAccRunnerResource(t *testing.T) {
   						provider_type = "RUNNER_PROVIDER_AWS_EC2"
 
 						spec = {
-							desired_phase = "RUNNER_PHASE_INACTIVE"
 							configuration = {
 								region          = "us-west-2"
 								auto_update     = true
 								release_channel = "RUNNER_RELEASE_CHANNEL_STABLE"
-								log_level       = "LOG_LEVEL_INFO"
+								log_level       = "LOG_LEVEL_DEBUG"
 							}
 						}
 					}`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("ona_runner.test", "spec.desired_phase", "RUNNER_PHASE_INACTIVE"),
+					resource.TestCheckResourceAttr("ona_runner.test", "spec.configuration.log_level", "LOG_LEVEL_DEBUG"),
 				),
 			},
 		},

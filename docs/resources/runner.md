@@ -55,8 +55,11 @@ resource "ona_runner" "example" {
 Optional:
 
 - `configuration` (Attributes) (see [below for nested schema](#nestedatt--spec--configuration))
-- `desired_phase` (String) Desired runner phase (e.g. `RUNNER_PHASE_ACTIVE`, `RUNNER_PHASE_INACTIVE`). The API starts every runner in `RUNNER_PHASE_ACTIVE`; the provider reconciles to the configured phase immediately after creation. Managed runners always run as `RUNNER_PHASE_ACTIVE` and reject phase changes.
 - `variant` (String) Runner variant (`RUNNER_VARIANT_STANDARD`, `RUNNER_VARIANT_ENTERPRISE`).
+
+Read-Only:
+
+- `desired_phase` (String) Desired runner phase reported by the API (e.g. `RUNNER_PHASE_ACTIVE`). Read-only: `UpdateRunner` rejects `desiredPhase`, which only ever applied to local runners as an organization-wide toggle and is now deprecated in favour of the organization policy setting. See `status.phase` for the phase the runner is actually in.
 
 <a id="nestedatt--spec--configuration"></a>
 ### Nested Schema for `spec.configuration`
