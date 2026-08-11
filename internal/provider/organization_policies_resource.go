@@ -352,19 +352,7 @@ func (r *organizationPoliciesResource) ImportState(ctx context.Context, req reso
 }
 
 func (r *organizationPoliciesResource) authenticatedOrganizationID(ctx context.Context) (string, error) {
-	if r.client == nil {
-		return "", fmt.Errorf("provider is not configured")
-	}
-
-	result, err := r.client.Services.Identity.GetAuthenticatedIdentity(ctx, connect.NewRequest(&v1.GetAuthenticatedIdentityRequest{}))
-	if err != nil {
-		return "", fmt.Errorf("get authenticated identity: %w", err)
-	}
-	organizationID := result.Msg.GetOrganizationId()
-	if organizationID == "" {
-		return "", fmt.Errorf("authenticated identity has no organization ID")
-	}
-	return organizationID, nil
+	return authenticatedOrganizationID(ctx, r.client)
 }
 
 func (r *organizationPoliciesResource) getOrganizationPolicies(ctx context.Context, organizationID string) (*v1.OrganizationPolicies, error) {

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -153,6 +154,25 @@ func sortedEnumNames(values map[string]int32) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// authenticatedOrganizationID resolves the organization the API key belongs to.
+// Resources that are organization-scoped need the ID on create, and the API key
+// is only ever valid for one organization.
+func authenticatedOrganizationID(ctx context.Context, client *sdk.Client) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("provider is not configured")
+	}
+
+	result, err := client.Services.Identity.GetAuthenticatedIdentity(ctx, connect.NewRequest(&v1.GetAuthenticatedIdentityRequest{}))
+	if err != nil {
+		return "", fmt.Errorf("get authenticated identity: %w", err)
+	}
+	organizationID := result.Msg.GetOrganizationId()
+	if organizationID == "" {
+		return "", fmt.Errorf("authenticated identity has no organization ID")
+	}
+	return organizationID, nil
 }
 
 // isAPINotFound reports whether err is an API error signalling a missing
