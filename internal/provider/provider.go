@@ -202,6 +202,7 @@ func newSDKClient(apiKey, baseURL string, httpClient *http.Client) (*sdk.Client,
 
 func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewOrganizationPoliciesResource,
 		NewProjectResource,
 		NewRunnerResource,
 		NewRunnerEnvironmentClassResource,

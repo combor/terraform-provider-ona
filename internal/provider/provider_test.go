@@ -10,6 +10,7 @@ import (
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	frameworkprovider "github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,6 +39,20 @@ func TestProviderSchema_ExposesRetryAndTimeoutAttributes(t *testing.T) {
 	requestTimeout, ok := resp.Schema.Attributes["request_timeout"]
 	require.True(t, ok)
 	assert.True(t, requestTimeout.IsOptional())
+}
+
+func TestProviderResources_ExposesOrganizationPolicies(t *testing.T) {
+	p := &onaProvider{}
+
+	for _, constructor := range p.Resources(context.Background()) {
+		var metadata resource.MetadataResponse
+		constructor().Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "ona"}, &metadata)
+		if metadata.TypeName == "ona_organization_policies" {
+			return
+		}
+	}
+
+	t.Fatal("ona_organization_policies is not registered")
 }
 
 func TestInt64ToIntChecked(t *testing.T) {
