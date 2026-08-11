@@ -156,6 +156,23 @@ func sortedEnumNames(values map[string]int32) []string {
 	return names
 }
 
+// pairID joins the two identifiers of a resource that the API keys by a pair
+// rather than by an ID of its own.
+func pairID(first, second string) string {
+	return first + "/" + second
+}
+
+// parsePairImportID splits an import ID of the form "<first>/<second>".
+// format is the spelling shown to the user when the ID does not parse.
+func parsePairImportID(importID, format string) (string, string, error) {
+	first, second, ok := strings.Cut(importID, "/")
+	if !ok || first == "" || second == "" {
+		return "", "", fmt.Errorf("expected import identifier in the format %s", format)
+	}
+
+	return first, second, nil
+}
+
 // authenticatedOrganizationID resolves the organization the API key belongs to.
 // Resources that are organization-scoped need the ID on create, and the API key
 // is only ever valid for one organization.
