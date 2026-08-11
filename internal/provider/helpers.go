@@ -166,7 +166,9 @@ func pairID(first, second string) string {
 // format is the spelling shown to the user when the ID does not parse.
 func parsePairImportID(importID, format string) (string, string, error) {
 	first, second, ok := strings.Cut(importID, "/")
-	if !ok || first == "" || second == "" {
+	// A third component would end up inside the second ID, and the import would
+	// then quietly refresh into nothing instead of reporting a bad identifier.
+	if !ok || first == "" || second == "" || strings.Contains(second, "/") {
 		return "", "", fmt.Errorf("expected import identifier in the format %s", format)
 	}
 

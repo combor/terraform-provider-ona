@@ -431,3 +431,19 @@ func TestBuildUpdateWindowParam_RejectsOutOfRangeHours(t *testing.T) {
 	assert.True(t, diags.HasError())
 	assert.Nil(t, got.StartHour)
 }
+
+func TestParsePairImportID(t *testing.T) {
+	t.Run("parses exactly two components", func(t *testing.T) {
+		first, second, err := parsePairImportID("runner-1/group-1", "<runner-id>/<group-id>")
+		require.NoError(t, err)
+		assert.Equal(t, "runner-1", first)
+		assert.Equal(t, "group-1", second)
+	})
+
+	t.Run("rejects malformed identifiers", func(t *testing.T) {
+		for _, importID := range []string{"", "runner-1", "/group-1", "runner-1/", "runner-1/group-1/extra"} {
+			_, _, err := parsePairImportID(importID, "<runner-id>/<group-id>")
+			assert.Error(t, err, importID)
+		}
+	})
+}

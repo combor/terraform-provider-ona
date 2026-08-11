@@ -39,19 +39,3 @@ func TestRunnerRoleValue(t *testing.T) {
 		assert.Contains(t, diags.Errors()[0].Detail(), "RUNNER_ROLE_ADMIN")
 	})
 }
-
-func TestParsePairImportID(t *testing.T) {
-	t.Run("splits on the first separator", func(t *testing.T) {
-		first, second, err := parsePairImportID("runner-1/group-1", "<runner-id>/<group-id>")
-		require.NoError(t, err)
-		assert.Equal(t, "runner-1", first)
-		assert.Equal(t, "group-1", second)
-	})
-
-	t.Run("rejects malformed identifiers", func(t *testing.T) {
-		for _, importID := range []string{"", "runner-1", "/group-1", "runner-1/"} {
-			_, _, err := parsePairImportID(importID, "<runner-id>/<group-id>")
-			assert.Error(t, err, importID)
-		}
-	})
-}
