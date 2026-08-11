@@ -4,21 +4,22 @@ import (
 	"testing"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMapGroupToDataSourceModel_MapsAllFields(t *testing.T) {
-	got := mapGroupToDataSourceModel(gitpod.Group{
-		ID:             "group-123",
+	got := mapGroupToDataSourceModel(&v1.Group{
+		Id:             "group-123",
 		Name:           "Engineering",
 		Description:    "Engineering team",
-		OrganizationID: "org-456",
+		OrganizationId: "org-456",
 		MemberCount:    5,
 		DirectShare:    true,
 		SystemManaged:  false,
-		CreatedAt:      time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
-		UpdatedAt:      time.Date(2026, time.February, 3, 4, 5, 6, 0, time.UTC),
+		CreatedAt:      timestamppb.New(time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)),
+		UpdatedAt:      timestamppb.New(time.Date(2026, time.February, 3, 4, 5, 6, 0, time.UTC)),
 	})
 
 	assert.Equal(t, "group-123", got.ID.ValueString())
@@ -33,8 +34,8 @@ func TestMapGroupToDataSourceModel_MapsAllFields(t *testing.T) {
 }
 
 func TestMapGroupToDataSourceModel_EmptyOptionalFields(t *testing.T) {
-	got := mapGroupToDataSourceModel(gitpod.Group{
-		ID: "group-789",
+	got := mapGroupToDataSourceModel(&v1.Group{
+		Id: "group-789",
 	})
 
 	assert.Equal(t, "group-789", got.ID.ValueString())

@@ -1,30 +1,30 @@
 package provider
 
 import (
-	"encoding/json"
 	"testing"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestMapRunnersToDataSourceModel_MapsAndSorts(t *testing.T) {
-	got := mapRunnersToDataSourceModel([]gitpod.Runner{
+	got := mapRunnersToDataSourceModel([]*v1.Runner{
 		{
-			RunnerID:        "runner-b",
+			RunnerId:        "runner-b",
 			Name:            "Beta",
-			Provider:        gitpod.RunnerProviderAwsEc2,
-			RunnerManagerID: "mgr-1",
-			Status:          gitpod.RunnerStatus{Phase: gitpod.RunnerPhaseActive},
+			Provider:        v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
+			RunnerManagerId: "mgr-1",
+			Status:          &v1.RunnerStatus{Phase: v1.RunnerPhase_RUNNER_PHASE_ACTIVE},
 		},
 		{
-			RunnerID:        "runner-a",
+			RunnerId:        "runner-a",
 			Name:            "Alpha",
-			Provider:        gitpod.RunnerProviderLinuxHost,
-			RunnerManagerID: "mgr-2",
-			Status:          gitpod.RunnerStatus{Phase: gitpod.RunnerPhaseCreated},
+			Provider:        v1.RunnerProvider_RUNNER_PROVIDER_GCP,
+			RunnerManagerId: "mgr-2",
+			Status:          &v1.RunnerStatus{Phase: v1.RunnerPhase_RUNNER_PHASE_CREATED},
 		},
 	})
 
@@ -32,7 +32,7 @@ func TestMapRunnersToDataSourceModel_MapsAndSorts(t *testing.T) {
 
 	assert.Equal(t, "runner-a", got.Runners[0].ID.ValueString())
 	assert.Equal(t, "Alpha", got.Runners[0].Name.ValueString())
-	assert.Equal(t, string(gitpod.RunnerProviderLinuxHost), got.Runners[0].ProviderType.ValueString())
+	assert.Equal(t, v1.RunnerProvider_RUNNER_PROVIDER_GCP.String(), got.Runners[0].ProviderType.ValueString())
 	assert.Equal(t, "mgr-2", got.Runners[0].RunnerManagerID.ValueString())
 
 	assert.Equal(t, "runner-b", got.Runners[1].ID.ValueString())
@@ -40,16 +40,16 @@ func TestMapRunnersToDataSourceModel_MapsAndSorts(t *testing.T) {
 }
 
 func TestMapRunnersToDataSourceModel_EmptyList(t *testing.T) {
-	got := mapRunnersToDataSourceModel([]gitpod.Runner{})
+	got := mapRunnersToDataSourceModel([]*v1.Runner{})
 	assert.Empty(t, got.Runners)
 }
 
 func TestMapRunnersToDataSourceModel_NullRunnerManagerID(t *testing.T) {
-	got := mapRunnersToDataSourceModel([]gitpod.Runner{
+	got := mapRunnersToDataSourceModel([]*v1.Runner{
 		{
-			RunnerID: "runner-1",
+			RunnerId: "runner-1",
 			Name:     "Test",
-			Provider: gitpod.RunnerProviderAwsEc2,
+			Provider: v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
 		},
 	})
 
@@ -58,16 +58,16 @@ func TestMapRunnersToDataSourceModel_NullRunnerManagerID(t *testing.T) {
 }
 
 func TestMapRunnerToDataSourceModel_UpdateWindowMissingEndHourRemainsNull(t *testing.T) {
-	var cfg gitpod.RunnerConfiguration
-	require.NoError(t, json.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), &cfg))
+	cfg := &v1.RunnerConfiguration{}
+	require.NoError(t, protojson.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), cfg))
 
-	runner := gitpod.Runner{
-		RunnerID: "runner-123",
+	runner := &v1.Runner{
+		RunnerId: "runner-123",
 		Name:     "runner-name",
-		Provider: gitpod.RunnerProviderAwsEc2,
-		Spec: gitpod.RunnerSpec{
-			DesiredPhase:  gitpod.RunnerPhaseActive,
-			Variant:       gitpod.RunnerVariantStandard,
+		Provider: v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
+		Spec: &v1.RunnerSpec{
+			DesiredPhase:  v1.RunnerPhase_RUNNER_PHASE_ACTIVE,
+			Variant:       v1.RunnerVariant_RUNNER_VARIANT_STANDARD,
 			Configuration: cfg,
 		},
 	}
@@ -82,7 +82,7 @@ func TestMapRunnerToDataSourceModel_UpdateWindowMissingEndHourRemainsNull(t *tes
 }
 
 func TestMatchesRunnerFilters_NoFilters(t *testing.T) {
-	assert.True(t, matchesRunnerFilters(gitpod.Runner{Name: "anything"}, nil))
+	assert.True(t, matchesRunnerFilters(&v1.Runner{Name: "anything"}, nil))
 }
 
 func TestMatchesRunnerFilters_NameMatch(t *testing.T) {
@@ -93,9 +93,9 @@ func TestMatchesRunnerFilters_NameMatch(t *testing.T) {
 		},
 	}
 
-	assert.True(t, matchesRunnerFilters(gitpod.Runner{Name: "Alpha"}, filters))
-	assert.True(t, matchesRunnerFilters(gitpod.Runner{Name: "Beta"}, filters))
-	assert.False(t, matchesRunnerFilters(gitpod.Runner{Name: "Gamma"}, filters))
+	assert.True(t, matchesRunnerFilters(&v1.Runner{Name: "Alpha"}, filters))
+	assert.True(t, matchesRunnerFilters(&v1.Runner{Name: "Beta"}, filters))
+	assert.False(t, matchesRunnerFilters(&v1.Runner{Name: "Gamma"}, filters))
 }
 
 func TestMatchesRunnerFilters_RunnerManagerIDMatch(t *testing.T) {
@@ -106,8 +106,8 @@ func TestMatchesRunnerFilters_RunnerManagerIDMatch(t *testing.T) {
 		},
 	}
 
-	assert.True(t, matchesRunnerFilters(gitpod.Runner{RunnerManagerID: "mgr-1"}, filters))
-	assert.False(t, matchesRunnerFilters(gitpod.Runner{RunnerManagerID: "mgr-2"}, filters))
+	assert.True(t, matchesRunnerFilters(&v1.Runner{RunnerManagerId: "mgr-1"}, filters))
+	assert.False(t, matchesRunnerFilters(&v1.Runner{RunnerManagerId: "mgr-2"}, filters))
 }
 
 func TestMatchesRunnerFilters_MultipleFilters(t *testing.T) {
@@ -122,9 +122,9 @@ func TestMatchesRunnerFilters_MultipleFilters(t *testing.T) {
 		},
 	}
 
-	assert.True(t, matchesRunnerFilters(gitpod.Runner{Name: "Alpha", RunnerManagerID: "mgr-1"}, filters))
-	assert.False(t, matchesRunnerFilters(gitpod.Runner{Name: "Alpha", RunnerManagerID: "mgr-2"}, filters))
-	assert.False(t, matchesRunnerFilters(gitpod.Runner{Name: "Beta", RunnerManagerID: "mgr-1"}, filters))
+	assert.True(t, matchesRunnerFilters(&v1.Runner{Name: "Alpha", RunnerManagerId: "mgr-1"}, filters))
+	assert.False(t, matchesRunnerFilters(&v1.Runner{Name: "Alpha", RunnerManagerId: "mgr-2"}, filters))
+	assert.False(t, matchesRunnerFilters(&v1.Runner{Name: "Beta", RunnerManagerId: "mgr-1"}, filters))
 }
 
 func TestMatchesRunnerFilters_UnsupportedFilter(t *testing.T) {
@@ -135,5 +135,5 @@ func TestMatchesRunnerFilters_UnsupportedFilter(t *testing.T) {
 		},
 	}
 
-	assert.False(t, matchesRunnerFilters(gitpod.Runner{Name: "anything"}, filters))
+	assert.False(t, matchesRunnerFilters(&v1.Runner{Name: "anything"}, filters))
 }

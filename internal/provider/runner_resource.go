@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -13,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -21,7 +25,7 @@ var (
 )
 
 type runnerResource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerResource() resource.Resource {
@@ -203,18 +207,21 @@ func (r *runnerResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	params := gitpod.RunnerNewParams{
-		Name:     gitpod.F(plan.Name.ValueString()),
-		Provider: gitpod.F(gitpod.RunnerProvider(plan.ProviderType.ValueString())),
+	params := &v1.CreateRunnerRequest{
+		Name:     plan.Name.ValueString(),
+		Provider: enumValue[v1.RunnerProvider]("provider_type", plan.ProviderType.ValueString(), v1.RunnerProvider_value, &resp.Diagnostics),
 	}
 	if !plan.RunnerManagerID.IsNull() && !plan.RunnerManagerID.IsUnknown() && plan.RunnerManagerID.ValueString() != "" {
-		params.RunnerManagerID = gitpod.F(plan.RunnerManagerID.ValueString())
+		params.RunnerManagerId = plan.RunnerManagerID.ValueString()
 	}
 	if plan.Spec != nil {
-		params.Spec = gitpod.F(buildSpecParam(plan.Spec))
+		params.Spec = buildSpecParam(plan.Spec, &resp.Diagnostics)
+	}
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	createResp, err := r.client.Runners.New(ctx, params)
+	createResp, err := r.client.Services.Runner.CreateRunner(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create runner", err.Error())
 		return
@@ -223,17 +230,17 @@ func (r *runnerResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Once the runner exists, Create must never return without persisting state,
 	// or the remote runner is orphaned. createResp.Runner is the fallback used
 	// whenever a follow-up call fails.
-	runnerID := createResp.Runner.RunnerID
-	runner := createResp.Runner
+	runnerID := createResp.Msg.GetRunner().GetRunnerId()
+	runner := createResp.Msg.GetRunner()
 
 	// Read back to populate computed configuration fields (e.g. release_channel,
 	// log_level) the create response may omit. If the read fails, fall back to
 	// the create response so the runner is still tracked; computed fields
 	// reconcile on the next refresh.
-	if getResp, getErr := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(runnerID),
-	}); getErr == nil {
-		runner = getResp.Runner
+	if getResp, getErr := r.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+		RunnerId: runnerID,
+	})); getErr == nil {
+		runner = getResp.Msg.GetRunner()
 	} else {
 		resp.Diagnostics.AddWarning("Could not read runner after create", getErr.Error())
 	}
@@ -249,9 +256,9 @@ func (r *runnerResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(state.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+		RunnerId: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -261,7 +268,7 @@ func (r *runnerResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	newState := mapRunnerToModel(getResp.Runner, state)
+	newState := mapRunnerToModel(getResp.Msg.GetRunner(), state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -278,24 +285,27 @@ func (r *runnerResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	params := buildRunnerUpdateParams(plan, prior)
+	params := buildRunnerUpdateParams(plan, prior, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	_, err := r.client.Runners.Update(ctx, params)
+	_, err := r.client.Services.Runner.UpdateRunner(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update runner", err.Error())
 		return
 	}
 
 	// Read back to get computed fields
-	getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(plan.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+		RunnerId: plan.ID.ValueString(),
+	}))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read runner after update", err.Error())
 		return
 	}
 
-	state := mapRunnerToModel(getResp.Runner, plan)
+	state := mapRunnerToModel(getResp.Msg.GetRunner(), plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -307,13 +317,13 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	runnerID := state.ID.ValueString()
-	deleteParams := gitpod.RunnerDeleteParams{
-		RunnerID: gitpod.F(runnerID),
+	deleteParams := &v1.DeleteRunnerRequest{
+		RunnerId: runnerID,
 	}
-	if state.ProviderType.ValueString() != string(gitpod.RunnerProviderManaged) {
-		deleteParams.Force = gitpod.F(true)
+	if state.ProviderType.ValueString() != v1.RunnerProvider_RUNNER_PROVIDER_MANAGED.String() {
+		deleteParams.Force = true
 	}
-	_, err := r.client.Runners.Delete(ctx, deleteParams)
+	_, err := r.client.Services.Runner.DeleteRunner(ctx, connect.NewRequest(deleteParams))
 	if err != nil {
 		if isAPINotFound(err) {
 			return // already gone
@@ -323,7 +333,7 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	}
 
 	// Poll until the runner reaches DELETED phase or disappears (404).
-	if _, err := r.waitForPhase(ctx, runnerID, gitpod.RunnerPhaseDeleted); err != nil {
+	if _, err := r.waitForPhase(ctx, runnerID, v1.RunnerPhase_RUNNER_PHASE_DELETED); err != nil {
 		resp.Diagnostics.AddError("Runner deletion did not complete", err.Error())
 	}
 }
@@ -332,7 +342,7 @@ func (r *runnerResource) Delete(ctx context.Context, req resource.DeleteRequest,
 // or the API returns 404 (treated as success for deletion). After deleting a
 // runner, the API may keep returning the runner in ACTIVE for a short time and
 // then start returning 404. In testing, it never returned RUNNER_PHASE_DELETED.
-func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected gitpod.RunnerPhase) (*gitpod.Runner, error) {
+func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expected v1.RunnerPhase) (*v1.Runner, error) {
 	const (
 		pollInterval = 2 * time.Second
 		timeout      = 2 * time.Minute
@@ -341,12 +351,12 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 	deadline := time.Now().Add(timeout)
 	for {
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for runner %s to reach phase %s", runnerID, expected)
+			return nil, fmt.Errorf("timed out waiting for runner %s to reach phase %s", runnerID, expected.String())
 		}
 
-		getResp, err := r.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-			RunnerID: gitpod.F(runnerID),
-		})
+		getResp, err := r.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+			RunnerId: runnerID,
+		}))
 		if err != nil {
 			if isAPINotFound(err) {
 				return nil, nil // Delete completion is observed as 404 in practice; RUNNER_PHASE_DELETED is not returned.
@@ -354,15 +364,15 @@ func (r *runnerResource) waitForPhase(ctx context.Context, runnerID string, expe
 			return nil, fmt.Errorf("error polling runner status: %w", err)
 		}
 
-		phase := getResp.Runner.Status.Phase
+		phase := getResp.Msg.GetRunner().GetStatus().GetPhase()
 		tflog.Debug(ctx, "waiting for runner phase", map[string]any{
 			"runner_id": runnerID,
-			"current":   string(phase),
-			"expected":  string(expected),
+			"current":   phase.String(),
+			"expected":  expected.String(),
 		})
 
 		if phase == expected {
-			return &getResp.Runner, nil
+			return getResp.Msg.GetRunner(), nil
 		}
 
 		select {
@@ -379,101 +389,104 @@ func (r *runnerResource) ImportState(ctx context.Context, req resource.ImportSta
 
 // Helpers
 
-func buildSpecParam(spec *runnerSpecModel) gitpod.RunnerSpecParam {
-	p := gitpod.RunnerSpecParam{}
+func buildSpecParam(spec *runnerSpecModel, diagnostics *diag.Diagnostics) *v1.RunnerSpec {
+	p := &v1.RunnerSpec{}
 	if !spec.Variant.IsNull() && !spec.Variant.IsUnknown() {
-		p.Variant = gitpod.F(gitpod.RunnerVariant(spec.Variant.ValueString()))
+		p.Variant = enumValue[v1.RunnerVariant]("spec.variant", spec.Variant.ValueString(), v1.RunnerVariant_value, diagnostics)
 	}
 	if spec.Configuration != nil {
-		p.Configuration = gitpod.F(buildConfigParam(spec.Configuration))
+		p.Configuration = buildConfigParam(spec.Configuration, diagnostics)
 	}
 	return p
 }
 
-func buildConfigParam(cfg *runnerConfigModel) gitpod.RunnerConfigurationParam {
-	p := gitpod.RunnerConfigurationParam{}
+func buildConfigParam(cfg *runnerConfigModel, diagnostics *diag.Diagnostics) *v1.RunnerConfiguration {
+	p := &v1.RunnerConfiguration{}
 	if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
-		p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
+		p.AutoUpdate = cfg.AutoUpdate.ValueBool()
 	}
 	if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
-		p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
+		p.DevcontainerImageCacheEnabled = cfg.DevcontainerImageCacheEnabled.ValueBool()
 	}
 	if !cfg.Region.IsNull() && !cfg.Region.IsUnknown() {
-		p.Region = gitpod.F(cfg.Region.ValueString())
+		p.Region = cfg.Region.ValueString()
 	}
 	if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
-		p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
+		p.ReleaseChannel = enumValue[v1.RunnerReleaseChannel]("spec.configuration.release_channel", cfg.ReleaseChannel.ValueString(), v1.RunnerReleaseChannel_value, diagnostics)
 	}
 	if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
-		p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
+		p.LogLevel = enumValue[v1.LogLevel]("spec.configuration.log_level", cfg.LogLevel.ValueString(), v1.LogLevel_value, diagnostics)
 	}
 	if cfg.Metrics != nil {
-		p.Metrics = gitpod.F(buildMetricsParam(cfg.Metrics))
+		p.Metrics = buildMetricsParam(cfg.Metrics)
 	}
 	if cfg.UpdateWindow != nil {
-		p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+		p.UpdateWindow = buildUpdateWindowParam(cfg.UpdateWindow, diagnostics)
 	}
 	return p
 }
 
-func buildUpdateWindowParam(w *runnerUpdateWindowModel) gitpod.UpdateWindowParam {
-	p := gitpod.UpdateWindowParam{
-		StartHour: gitpod.F(w.StartHour.ValueInt64()),
+func buildUpdateWindowParam(w *runnerUpdateWindowModel, diagnostics *diag.Diagnostics) *v1.UpdateWindow {
+	p := &v1.UpdateWindow{}
+	if startHour, ok := validatedHour("spec.configuration.update_window.start_hour", w.StartHour, diagnostics); ok {
+		p.StartHour = proto.Uint32(uint32(startHour))
 	}
 	if !w.EndHour.IsNull() && !w.EndHour.IsUnknown() {
-		p.EndHour = gitpod.F(w.EndHour.ValueInt64())
+		if endHour, ok := validatedHour("spec.configuration.update_window.end_hour", w.EndHour, diagnostics); ok {
+			p.EndHour = proto.Uint32(uint32(endHour))
+		}
 	}
 	return p
 }
 
-func buildMetricsParam(m *runnerMetricsModel) gitpod.MetricsConfigurationParam {
-	p := gitpod.MetricsConfigurationParam{}
+func buildMetricsParam(m *runnerMetricsModel) *v1.MetricsConfiguration {
+	p := &v1.MetricsConfiguration{}
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
-		p.Enabled = gitpod.F(m.Enabled.ValueBool())
+		p.Enabled = m.Enabled.ValueBool()
 	}
 	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
-		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
+		p.ManagedMetricsEnabled = m.ManagedMetricsEnabled.ValueBool()
 	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
-		p.URL = gitpod.F(m.URL.ValueString())
+		p.Url = m.URL.ValueString()
 	}
 	if !m.Username.IsNull() && !m.Username.IsUnknown() {
-		p.Username = gitpod.F(m.Username.ValueString())
+		p.Username = m.Username.ValueString()
 	}
 	if !m.Password.IsNull() && !m.Password.IsUnknown() {
-		p.Password = gitpod.F(m.Password.ValueString())
+		p.Password = m.Password.ValueString()
 	}
 	return p
 }
 
-func buildUpdateMetricsParam(m *runnerMetricsModel) gitpod.RunnerUpdateParamsSpecConfigurationMetrics {
-	p := gitpod.RunnerUpdateParamsSpecConfigurationMetrics{}
+func buildUpdateMetricsParam(m *runnerMetricsModel) *v1.UpdateRunnerRequest_MetricsConfiguration {
+	p := &v1.UpdateRunnerRequest_MetricsConfiguration{}
 	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() {
-		p.Enabled = gitpod.F(m.Enabled.ValueBool())
+		p.Enabled = m.Enabled.ValueBoolPointer()
 	}
 	if !m.ManagedMetricsEnabled.IsNull() && !m.ManagedMetricsEnabled.IsUnknown() {
-		p.ManagedMetricsEnabled = gitpod.F(m.ManagedMetricsEnabled.ValueBool())
+		p.ManagedMetricsEnabled = m.ManagedMetricsEnabled.ValueBoolPointer()
 	}
 	if !m.URL.IsNull() && !m.URL.IsUnknown() {
-		p.URL = gitpod.F(m.URL.ValueString())
+		p.Url = m.URL.ValueStringPointer()
 	}
 	if !m.Username.IsNull() && !m.Username.IsUnknown() {
-		p.Username = gitpod.F(m.Username.ValueString())
+		p.Username = m.Username.ValueStringPointer()
 	}
 	if !m.Password.IsNull() && !m.Password.IsUnknown() {
-		p.Password = gitpod.F(m.Password.ValueString())
+		p.Password = m.Password.ValueStringPointer()
 	}
 	return p
 }
 
-func buildRunnerUpdateParams(plan, prior runnerModel) gitpod.RunnerUpdateParams {
-	params := gitpod.RunnerUpdateParams{
-		RunnerID: gitpod.F(plan.ID.ValueString()),
-		Name:     gitpod.F(plan.Name.ValueString()),
+func buildRunnerUpdateParams(plan, prior runnerModel, diagnostics *diag.Diagnostics) *v1.UpdateRunnerRequest {
+	params := &v1.UpdateRunnerRequest{
+		RunnerId: plan.ID.ValueString(),
+		Name:     plan.Name.ValueStringPointer(),
 	}
 
-	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec); sendSpec {
-		params.Spec = gitpod.F(spec)
+	if spec, sendSpec := buildRunnerUpdateSpecParam(plan.Spec, prior.Spec, diagnostics); sendSpec {
+		params.Spec = spec
 	}
 
 	return params
@@ -484,8 +497,8 @@ func buildRunnerUpdateParams(plan, prior runnerModel) gitpod.RunnerUpdateParams 
 // runners as an organization-wide toggle, and that path is deprecated in favour
 // of the organization policy setting. desired_phase is read-only in the schema,
 // so there is nothing to send.
-func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel) (gitpod.RunnerUpdateParamsSpec, bool) {
-	p := gitpod.RunnerUpdateParamsSpec{}
+func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel, diagnostics *diag.Diagnostics) (*v1.UpdateRunnerRequest_Spec, bool) {
+	p := &v1.UpdateRunnerRequest_Spec{}
 	sendSpec := false
 
 	var priorCfg *runnerConfigModel
@@ -493,47 +506,47 @@ func buildRunnerUpdateSpecParam(spec, prior *runnerSpecModel) (gitpod.RunnerUpda
 		priorCfg = prior.Configuration
 	}
 
-	if cfg, sendConfig := buildRunnerUpdateConfigParam(specConfiguration(spec), priorCfg); sendConfig {
-		p.Configuration = gitpod.F(cfg)
+	if cfg, sendConfig := buildRunnerUpdateConfigParam(specConfiguration(spec), priorCfg, diagnostics); sendConfig {
+		p.Configuration = cfg
 		sendSpec = true
 	}
 
 	return p, sendSpec
 }
 
-func buildRunnerUpdateConfigParam(cfg, prior *runnerConfigModel) (gitpod.RunnerUpdateParamsSpecConfiguration, bool) {
-	p := gitpod.RunnerUpdateParamsSpecConfiguration{}
+func buildRunnerUpdateConfigParam(cfg, prior *runnerConfigModel, diagnostics *diag.Diagnostics) (*v1.UpdateRunnerRequest_RunnerConfiguration, bool) {
+	p := &v1.UpdateRunnerRequest_RunnerConfiguration{}
 	sendConfig := false
 
 	if cfg != nil {
 		if !cfg.AutoUpdate.IsNull() && !cfg.AutoUpdate.IsUnknown() {
-			p.AutoUpdate = gitpod.F(cfg.AutoUpdate.ValueBool())
+			p.AutoUpdate = cfg.AutoUpdate.ValueBoolPointer()
 			sendConfig = true
 		}
 		if !cfg.DevcontainerImageCacheEnabled.IsNull() && !cfg.DevcontainerImageCacheEnabled.IsUnknown() {
-			p.DevcontainerImageCacheEnabled = gitpod.F(cfg.DevcontainerImageCacheEnabled.ValueBool())
+			p.DevcontainerImageCacheEnabled = cfg.DevcontainerImageCacheEnabled.ValueBoolPointer()
 			sendConfig = true
 		}
 		if !cfg.ReleaseChannel.IsNull() && !cfg.ReleaseChannel.IsUnknown() {
-			p.ReleaseChannel = gitpod.F(gitpod.RunnerReleaseChannel(cfg.ReleaseChannel.ValueString()))
+			p.ReleaseChannel = enumValue[v1.RunnerReleaseChannel]("spec.configuration.release_channel", cfg.ReleaseChannel.ValueString(), v1.RunnerReleaseChannel_value, diagnostics).Enum()
 			sendConfig = true
 		}
 		if !cfg.LogLevel.IsNull() && !cfg.LogLevel.IsUnknown() {
-			p.LogLevel = gitpod.F(gitpod.LogLevel(cfg.LogLevel.ValueString()))
+			p.LogLevel = enumValue[v1.LogLevel]("spec.configuration.log_level", cfg.LogLevel.ValueString(), v1.LogLevel_value, diagnostics).Enum()
 			sendConfig = true
 		}
 		if cfg.Metrics != nil {
-			p.Metrics = gitpod.F(buildUpdateMetricsParam(cfg.Metrics))
+			p.Metrics = buildUpdateMetricsParam(cfg.Metrics)
 			sendConfig = true
 		}
 		if cfg.UpdateWindow != nil {
-			p.UpdateWindow = gitpod.F(buildUpdateWindowParam(cfg.UpdateWindow))
+			p.UpdateWindow = buildUpdateWindowParam(cfg.UpdateWindow, diagnostics)
 			sendConfig = true
 		}
 	}
 
 	if shouldClearRunnerUpdateWindow(cfg, prior) {
-		p.UpdateWindow = gitpod.F(gitpod.UpdateWindowParam{})
+		p.UpdateWindow = &v1.UpdateWindow{}
 		sendConfig = true
 	}
 
@@ -556,40 +569,41 @@ func shouldClearRunnerUpdateWindow(cfg, prior *runnerConfigModel) bool {
 	return cfg == nil || cfg.UpdateWindow == nil
 }
 
-func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
+func mapRunnerToModel(runner *v1.Runner, prior runnerModel) runnerModel {
 	m := runnerModel{
-		ID:           types.StringValue(runner.RunnerID),
-		Name:         types.StringValue(runner.Name),
-		ProviderType: types.StringValue(string(runner.Provider)),
+		ID:           types.StringValue(runner.GetRunnerId()),
+		Name:         types.StringValue(runner.GetName()),
+		ProviderType: types.StringValue(enumString(runner.GetProvider())),
 	}
 
-	m.RunnerManagerID = stringValueOrNull(runner.RunnerManagerID)
+	m.RunnerManagerID = stringValueOrNull(runner.GetRunnerManagerId())
 
 	spec := &runnerSpecModel{
-		DesiredPhase: types.StringValue(string(runner.Spec.DesiredPhase)),
+		DesiredPhase: types.StringValue(enumString(runner.GetSpec().GetDesiredPhase())),
 	}
 
 	m.Spec = spec
 
 	// Map spec — preserve user-set values the API doesn't return
 	if prior.Spec != nil {
-		spec.Variant = stringValueOrNull(string(runner.Spec.Variant))
+		spec.Variant = stringValueOrNull(enumString(runner.GetSpec().GetVariant()))
 
 		if prior.Spec.Configuration != nil {
+			configuration := runner.GetSpec().GetConfiguration()
 			// auto_update: prefer prior state when explicitly set, as the API
 			// may ignore the value for certain runner types (e.g. managed).
-			autoUpdate := types.BoolValue(runner.Spec.Configuration.AutoUpdate)
+			autoUpdate := types.BoolValue(configuration.GetAutoUpdate())
 			if !prior.Spec.Configuration.AutoUpdate.IsNull() && !prior.Spec.Configuration.AutoUpdate.IsUnknown() {
 				autoUpdate = prior.Spec.Configuration.AutoUpdate
 			}
 			cfg := &runnerConfigModel{
 				AutoUpdate:                    autoUpdate,
-				DevcontainerImageCacheEnabled: types.BoolValue(runner.Spec.Configuration.DevcontainerImageCacheEnabled),
-				ReleaseChannel:                types.StringValue(string(runner.Spec.Configuration.ReleaseChannel)),
-				LogLevel:                      types.StringValue(string(runner.Spec.Configuration.LogLevel)),
+				DevcontainerImageCacheEnabled: types.BoolValue(configuration.GetDevcontainerImageCacheEnabled()),
+				ReleaseChannel:                types.StringValue(enumString(configuration.GetReleaseChannel())),
+				LogLevel:                      types.StringValue(enumString(configuration.GetLogLevel())),
 			}
-			if runner.Spec.Configuration.Region != "" {
-				cfg.Region = types.StringValue(runner.Spec.Configuration.Region)
+			if configuration.GetRegion() != "" {
+				cfg.Region = types.StringValue(configuration.GetRegion())
 			} else if !prior.Spec.Configuration.Region.IsNull() {
 				cfg.Region = prior.Spec.Configuration.Region
 			} else {
@@ -597,15 +611,15 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 			}
 			if prior.Spec.Configuration.Metrics != nil {
 				cfg.Metrics = &runnerMetricsModel{
-					Enabled:               types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-					ManagedMetricsEnabled: types.BoolValue(runner.Spec.Configuration.Metrics.ManagedMetricsEnabled),
-					URL:                   stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-					Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+					Enabled:               types.BoolValue(configuration.GetMetrics().GetEnabled()),
+					ManagedMetricsEnabled: types.BoolValue(configuration.GetMetrics().GetManagedMetricsEnabled()),
+					URL:                   stringValueOrNull(configuration.GetMetrics().GetUrl()),
+					Username:              stringValueOrNull(configuration.GetMetrics().GetUsername()),
 					// Preserve password from prior state — API doesn't return it
 					Password: prior.Spec.Configuration.Metrics.Password,
 				}
 			}
-			if startHour, endHour, ok := mapUpdateWindowValues(runner.Spec.Configuration.UpdateWindow); ok {
+			if startHour, endHour, ok := mapUpdateWindowValues(configuration.GetUpdateWindow()); ok {
 				cfg.UpdateWindow = &runnerUpdateWindowModel{
 					StartHour: startHour,
 					EndHour:   endHour,
@@ -618,7 +632,7 @@ func mapRunnerToModel(runner gitpod.Runner, prior runnerModel) runnerModel {
 		}
 	}
 
-	m.Status = runnerStatusObjectValue(runner.Status)
+	m.Status = runnerStatusObjectValue(runner.GetStatus())
 
 	return m
 }

@@ -2,16 +2,16 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestBuildProjectPrebuildConfigurationParam_HandlesKnownNullAndUnknown(t *testing.T) {
@@ -21,7 +21,7 @@ func TestBuildProjectPrebuildConfigurationParam_HandlesKnownNullAndUnknown(t *te
 		EnvironmentClassIDs:   stringListValue([]string{"env-1", "env-2"}),
 		Executor: &projectSubjectModel{
 			ID:        types.StringValue("subject-1"),
-			Principal: types.StringValue(string(shared.PrincipalUser)),
+			Principal: types.StringValue(v1.Principal_PRINCIPAL_USER.String()),
 		},
 		Timeout: types.StringNull(),
 		Trigger: &projectPrebuildTriggerModel{
@@ -34,17 +34,16 @@ func TestBuildProjectPrebuildConfigurationParam_HandlesKnownNullAndUnknown(t *te
 	got, diags := buildProjectPrebuildConfigurationParam(context.Background(), cfg)
 	require.False(t, diags.HasError())
 
-	assert.True(t, got.Enabled.Present)
-	assert.Equal(t, true, got.Enabled.Value)
-	assert.False(t, got.EnableJetbrainsWarmup.Present)
-	assert.True(t, got.EnvironmentClassIDs.Present)
-	assert.Equal(t, []string{"env-1", "env-2"}, got.EnvironmentClassIDs.Value)
-	assert.True(t, got.Executor.Present)
-	assert.Equal(t, "subject-1", got.Executor.Value.ID.Value)
-	assert.Equal(t, shared.PrincipalUser, got.Executor.Value.Principal.Value)
-	assert.False(t, got.Timeout.Present)
-	assert.True(t, got.Trigger.Present)
-	assert.Equal(t, int64(2), got.Trigger.Value.DailySchedule.Value.HourUtc.Value)
+	assert.True(t, got.GetEnabled())
+	// unknown values are never sent; proto3 bools have no presence, so this is false
+	assert.False(t, got.GetEnableJetbrainsWarmup())
+	assert.Equal(t, []string{"env-1", "env-2"}, got.GetEnvironmentClassIds())
+	require.NotNil(t, got.GetExecutor())
+	assert.Equal(t, "subject-1", got.GetExecutor().GetId())
+	assert.Equal(t, v1.Principal_PRINCIPAL_USER, got.GetExecutor().GetPrincipal())
+	assert.Nil(t, got.GetTimeout())
+	require.NotNil(t, got.GetTrigger())
+	assert.Equal(t, int32(2), got.GetTrigger().GetDailySchedule().GetHourUtc())
 }
 
 func TestBuildRecommendedEditorsParam_EmptyVersionsRemainExplicit(t *testing.T) {
@@ -60,9 +59,8 @@ func TestBuildRecommendedEditorsParam_EmptyVersionsRemainExplicit(t *testing.T) 
 	got, diags := buildRecommendedEditorsParam(context.Background(), editors)
 	require.False(t, diags.HasError())
 
-	assert.True(t, got.Editors.Present)
-	assert.Empty(t, got.Editors.Value["vscode"].Versions.Value)
-	assert.Equal(t, []string{"2025.1"}, got.Editors.Value["goland"].Versions.Value)
+	assert.Empty(t, got.GetEditors()["vscode"].GetVersions())
+	assert.Equal(t, []string{"2025.1"}, got.GetEditors()["goland"].GetVersions())
 }
 
 func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
@@ -94,35 +92,37 @@ func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
 		RecommendedEditors:    recommendedEditorsPrior,
 	}
 
-	project := gitpod.Project{
-		ID:                   "project-123",
+	project := &v1.Project{
+		Id:                   "project-123",
 		AutomationsFilePath:  "",
 		DevcontainerFilePath: "",
-		DesiredPhase:         gitpod.ProjectPhaseDeleted,
-		Initializer: gitpod.EnvironmentInitializer{
-			Specs: []gitpod.EnvironmentInitializerSpec{{
-				Git: gitpod.EnvironmentInitializerSpecsGit{
-					RemoteUri: "https://github.com/combor/terraform-provider-ona",
+		DesiredPhase:         v1.ProjectPhase_PROJECT_PHASE_DELETED,
+		Initializer: &v1.EnvironmentInitializer{
+			Specs: []*v1.EnvironmentInitializer_Spec{{
+				Spec: &v1.EnvironmentInitializer_Spec_Git{
+					Git: &v1.GitInitializer{
+						RemoteUri: "https://github.com/combor/terraform-provider-ona",
+					},
 				},
 			}},
 		},
-		Metadata: gitpod.ProjectMetadata{
+		Metadata: &v1.ProjectMetadata{
 			Name:           "project-name",
-			OrganizationID: "org-123",
-			CreatedAt:      time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
-			UpdatedAt:      time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC),
-			Creator: shared.Subject{
-				ID:        "creator-1",
-				Principal: shared.PrincipalUser,
+			OrganizationId: "org-123",
+			CreatedAt:      timestamppb.New(time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)),
+			UpdatedAt:      timestamppb.New(time.Date(2026, time.January, 3, 4, 5, 6, 0, time.UTC)),
+			Creator: &v1.Subject{
+				Id:        "creator-1",
+				Principal: v1.Principal_PRINCIPAL_USER,
 			},
 		},
-		RecommendedEditors:   gitpod.RecommendedEditors{},
+		RecommendedEditors:   &v1.RecommendedEditors{},
 		TechnicalDescription: "",
-		UsedBy: gitpod.ProjectUsedBy{
+		UsedBy: &v1.Project_UsedBy{
 			TotalSubjects: 1,
-			Subjects: []shared.Subject{{
-				ID:        "user-1",
-				Principal: shared.PrincipalUser,
+			Subjects: []*v1.Subject{{
+				Id:        "user-1",
+				Principal: v1.Principal_PRINCIPAL_USER,
 			}},
 		},
 	}
@@ -134,7 +134,7 @@ func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
 	assert.Equal(t, ".gitpod/automations.yaml", got.AutomationsFilePath.ValueString())
 	assert.Equal(t, ".devcontainer/devcontainer.json", got.DevcontainerFilePath.ValueString())
 	assert.Equal(t, "deep project description", got.TechnicalDescription.ValueString())
-	assert.Equal(t, string(gitpod.ProjectPhaseDeleted), got.DesiredPhase.ValueString())
+	assert.Equal(t, v1.ProjectPhase_PROJECT_PHASE_DELETED.String(), got.DesiredPhase.ValueString())
 
 	prebuildGot, diags := projectPrebuildConfigurationModelFromObject(context.Background(), got.PrebuildConfiguration)
 	require.False(t, diags.HasError())
@@ -169,10 +169,10 @@ func TestMapProjectToModel_PreservesOmittedFieldsFromPriorState(t *testing.T) {
 }
 
 func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T) {
-	// Unmarshal from JSON so the SDK metadata correctly marks HourUtc as present.
-	var cfg gitpod.ProjectPrebuildConfiguration
+	// Unmarshal from the wire format so hourUtc:0 arrives inside a present trigger.
+	cfg := &v1.ProjectPrebuildConfiguration{}
 	raw := `{"enabled":true,"trigger":{"dailySchedule":{"hourUtc":0}}}`
-	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+	require.NoError(t, protojson.Unmarshal([]byte(raw), cfg))
 
 	got := mapProjectPrebuildConfigurationToModel(cfg, nil)
 
@@ -183,15 +183,17 @@ func TestMapProjectPrebuildConfigurationToModel_HourUtcZeroFromAPI(t *testing.T)
 }
 
 func TestMapProjectPrebuildConfigurationToModel_EnabledFalseFromAPI(t *testing.T) {
-	var cfg gitpod.ProjectPrebuildConfiguration
+	cfg := &v1.ProjectPrebuildConfiguration{}
 	raw := `{"enabled":false}`
-	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+	require.NoError(t, protojson.Unmarshal([]byte(raw), cfg))
 
 	got := mapProjectPrebuildConfigurationToModel(cfg, nil)
 
 	require.NotNil(t, got)
 	assert.False(t, got.Enabled.ValueBool())
-	assert.True(t, got.EnableJetbrainsWarmup.IsNull())
+	// enable_jetbrains_warmup is a plain proto3 bool: absent on the wire is
+	// indistinguishable from false, so it lands as false rather than null.
+	assert.False(t, got.EnableJetbrainsWarmup.ValueBool())
 	assert.True(t, got.EnvironmentClassIDs.IsNull())
 	assert.Nil(t, got.Executor)
 	assert.True(t, got.Timeout.IsNull())
@@ -199,9 +201,9 @@ func TestMapProjectPrebuildConfigurationToModel_EnabledFalseFromAPI(t *testing.T
 }
 
 func TestMapProjectPrebuildConfigurationToModel_DoesNotReuseUnknownPriorValues(t *testing.T) {
-	var cfg gitpod.ProjectPrebuildConfiguration
+	cfg := &v1.ProjectPrebuildConfiguration{}
 	raw := `{"enabled":true}`
-	require.NoError(t, json.Unmarshal([]byte(raw), &cfg))
+	require.NoError(t, protojson.Unmarshal([]byte(raw), cfg))
 
 	got := mapProjectPrebuildConfigurationToModel(cfg, &projectPrebuildConfigurationModel{
 		Enabled:               types.BoolValue(true),
@@ -221,7 +223,8 @@ func TestMapProjectPrebuildConfigurationToModel_DoesNotReuseUnknownPriorValues(t
 
 	require.NotNil(t, got)
 	assert.True(t, got.Enabled.ValueBool())
-	assert.True(t, got.EnableJetbrainsWarmup.IsNull())
+	// see above: no presence for proto3 bools, so the unknown prior is not reused
+	assert.False(t, got.EnableJetbrainsWarmup.ValueBool())
 	assert.True(t, got.EnvironmentClassIDs.IsNull())
 	assert.Nil(t, got.Executor)
 	assert.True(t, got.Timeout.IsNull())
@@ -254,23 +257,23 @@ func TestBuildEnvironmentInitializerParam_GitSpecWithAllFields(t *testing.T) {
 			Git: &projectInitializerGitModel{
 				RemoteURI:         types.StringValue("https://github.com/combor/terraform-provider-ona"),
 				CloneTarget:       types.StringValue("main"),
-				TargetMode:        types.StringValue(string(gitpod.EnvironmentInitializerSpecsGitTargetModeCloneTargetModeRemoteBranch)),
+				TargetMode:        types.StringValue(v1.GitInitializer_CLONE_TARGET_MODE_REMOTE_BRANCH.String()),
 				CheckoutLocation:  types.StringValue("src/provider"),
 				UpstreamRemoteURI: types.StringValue("https://github.com/upstream/repo"),
 			},
 		}},
 	})
 	require.False(t, diags.HasError())
-	require.Len(t, got.Specs.Value, 1)
+	require.Len(t, got.GetSpecs(), 1)
 
-	spec := got.Specs.Value[0]
-	assert.False(t, spec.ContextURL.Present)
-	assert.True(t, spec.Git.Present)
-	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.Git.Value.RemoteUri.Value)
-	assert.Equal(t, "main", spec.Git.Value.CloneTarget.Value)
-	assert.Equal(t, gitpod.EnvironmentInitializerSpecsGitTargetMode("CLONE_TARGET_MODE_REMOTE_BRANCH"), spec.Git.Value.TargetMode.Value)
-	assert.Equal(t, "src/provider", spec.Git.Value.CheckoutLocation.Value)
-	assert.Equal(t, "https://github.com/upstream/repo", spec.Git.Value.UpstreamRemoteUri.Value)
+	spec := got.GetSpecs()[0]
+	assert.Nil(t, spec.GetContextUrl())
+	require.NotNil(t, spec.GetGit())
+	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.GetGit().GetRemoteUri())
+	assert.Equal(t, "main", spec.GetGit().GetCloneTarget())
+	assert.Equal(t, v1.GitInitializer_CLONE_TARGET_MODE_REMOTE_BRANCH, spec.GetGit().GetTargetMode())
+	assert.Equal(t, "src/provider", spec.GetGit().GetCheckoutLocation())
+	assert.Equal(t, "https://github.com/upstream/repo", spec.GetGit().GetUpstreamRemoteUri())
 }
 
 func TestBuildEnvironmentInitializerParam_GitSpecOmitsNullFields(t *testing.T) {
@@ -287,12 +290,12 @@ func TestBuildEnvironmentInitializerParam_GitSpecOmitsNullFields(t *testing.T) {
 	})
 	require.False(t, diags.HasError())
 
-	spec := got.Specs.Value[0]
-	assert.True(t, spec.Git.Value.RemoteUri.Present)
-	assert.False(t, spec.Git.Value.CloneTarget.Present)
-	assert.False(t, spec.Git.Value.TargetMode.Present)
-	assert.False(t, spec.Git.Value.CheckoutLocation.Present)
-	assert.False(t, spec.Git.Value.UpstreamRemoteUri.Present)
+	spec := got.GetSpecs()[0]
+	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.GetGit().GetRemoteUri())
+	assert.Empty(t, spec.GetGit().GetCloneTarget())
+	assert.Equal(t, v1.GitInitializer_CLONE_TARGET_MODE_UNSPECIFIED, spec.GetGit().GetTargetMode())
+	assert.Empty(t, spec.GetGit().GetCheckoutLocation())
+	assert.Empty(t, spec.GetGit().GetUpstreamRemoteUri())
 }
 
 func TestBuildEnvironmentInitializerParam_ContextURLSpec(t *testing.T) {
@@ -304,12 +307,12 @@ func TestBuildEnvironmentInitializerParam_ContextURLSpec(t *testing.T) {
 		}},
 	})
 	require.False(t, diags.HasError())
-	require.Len(t, got.Specs.Value, 1)
+	require.Len(t, got.GetSpecs(), 1)
 
-	spec := got.Specs.Value[0]
-	assert.True(t, spec.ContextURL.Present)
-	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.ContextURL.Value.URL.Value)
-	assert.False(t, spec.Git.Present)
+	spec := got.GetSpecs()[0]
+	require.NotNil(t, spec.GetContextUrl())
+	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", spec.GetContextUrl().GetUrl())
+	assert.Nil(t, spec.GetGit())
 }
 
 func TestBuildEnvironmentInitializerParam_MultipleSpecs(t *testing.T) {
@@ -324,20 +327,32 @@ func TestBuildEnvironmentInitializerParam_MultipleSpecs(t *testing.T) {
 				ContextURL: &projectInitializerContextURLModel{
 					URL: types.StringValue("https://github.com/combor/repo-b"),
 				},
-				Git: &projectInitializerGitModel{
-					RemoteURI: types.StringValue("https://github.com/combor/repo-b"),
-				},
 			},
 		},
 	})
 	require.False(t, diags.HasError())
-	require.Len(t, got.Specs.Value, 2)
+	require.Len(t, got.GetSpecs(), 2)
 
-	assert.True(t, got.Specs.Value[0].Git.Present)
-	assert.False(t, got.Specs.Value[0].ContextURL.Present)
+	require.NotNil(t, got.GetSpecs()[0].GetGit())
+	assert.Nil(t, got.GetSpecs()[0].GetContextUrl())
 
-	assert.True(t, got.Specs.Value[1].Git.Present)
-	assert.True(t, got.Specs.Value[1].ContextURL.Present)
+	assert.Nil(t, got.GetSpecs()[1].GetGit())
+	require.NotNil(t, got.GetSpecs()[1].GetContextUrl())
+}
+
+func TestBuildEnvironmentInitializerParam_SpecWithBothContextURLAndGit(t *testing.T) {
+	_, diags := buildEnvironmentInitializerParam(&projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			ContextURL: &projectInitializerContextURLModel{
+				URL: types.StringValue("https://github.com/combor/repo-b"),
+			},
+			Git: &projectInitializerGitModel{
+				RemoteURI: types.StringValue("https://github.com/combor/repo-b"),
+			},
+		}},
+	})
+	require.True(t, diags.HasError())
+	assert.Contains(t, diags.Errors()[0].Detail(), "exactly one of context_url or git")
 }
 
 func TestBuildEnvironmentInitializerParam_MixedValidAndInvalidSpecs(t *testing.T) {
@@ -361,15 +376,67 @@ func TestMapProjectToModel_DoesNotPreserveRecommendedEditorsWhenPriorIsNull(t *t
 		RecommendedEditors: types.MapNull(projectRecommendedEditorObjectType()),
 	}
 
-	project := gitpod.Project{
-		ID: "project-123",
-		Metadata: gitpod.ProjectMetadata{
+	project := &v1.Project{
+		Id: "project-123",
+		Metadata: &v1.ProjectMetadata{
 			Name: "project-name",
 		},
-		RecommendedEditors: gitpod.RecommendedEditors{},
+		RecommendedEditors: &v1.RecommendedEditors{},
 	}
 
 	got, diags := mapProjectToModel(context.Background(), project, prior)
 	require.False(t, diags.HasError())
 	assert.True(t, got.RecommendedEditors.IsNull())
+}
+
+// Drift from context_url to git must not leave both variants in state: the
+// oneof cannot express that and buildEnvironmentInitializerParam rejects it.
+func TestMapProjectInitializerToModel_DropsInactiveVariantAfterDrift(t *testing.T) {
+	prior := &projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			ContextURL: &projectInitializerContextURLModel{
+				URL: types.StringValue("https://example.com/context"),
+			},
+		}},
+	}
+
+	got := mapProjectInitializerToModel(&v1.EnvironmentInitializer{
+		Specs: []*v1.EnvironmentInitializer_Spec{{
+			Spec: &v1.EnvironmentInitializer_Spec_Git{
+				Git: &v1.GitInitializer{RemoteUri: "https://github.com/combor/repo"},
+			},
+		}},
+	}, prior)
+
+	require.NotNil(t, got)
+	require.Len(t, got.Specs, 1)
+	assert.Nil(t, got.Specs[0].ContextURL)
+	require.NotNil(t, got.Specs[0].Git)
+	assert.Equal(t, "https://github.com/combor/repo", got.Specs[0].Git.RemoteURI.ValueString())
+
+	// The resulting state must round-trip back into a valid request.
+	_, diags := buildEnvironmentInitializerParam(got)
+	assert.False(t, diags.HasError())
+}
+
+func TestMapProjectInitializerToModel_KeepsPriorFieldsWithinActiveVariant(t *testing.T) {
+	prior := &projectInitializerModel{
+		Specs: []projectInitializerSpecModel{{
+			Git: &projectInitializerGitModel{
+				RemoteURI:        types.StringValue("https://github.com/combor/repo"),
+				CheckoutLocation: types.StringValue("src/provider"),
+			},
+		}},
+	}
+
+	got := mapProjectInitializerToModel(&v1.EnvironmentInitializer{
+		Specs: []*v1.EnvironmentInitializer_Spec{{
+			Spec: &v1.EnvironmentInitializer_Spec_Git{
+				Git: &v1.GitInitializer{RemoteUri: "https://github.com/combor/repo"},
+			},
+		}},
+	}, prior)
+
+	require.NotNil(t, got.Specs[0].Git)
+	assert.Equal(t, "src/provider", got.Specs[0].Git.CheckoutLocation.ValueString())
 }

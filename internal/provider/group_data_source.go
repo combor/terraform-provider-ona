@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -13,7 +15,7 @@ import (
 var _ datasource.DataSource = &groupDataSource{}
 
 type groupDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewGroupDataSource() datasource.DataSource {
@@ -84,9 +86,9 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	getResp, err := d.client.Groups.Get(ctx, gitpod.GroupGetParams{
-		GroupID: gitpod.F(config.ID.ValueString()),
-	})
+	getResp, err := d.client.Services.Group.GetGroup(ctx, connect.NewRequest(&v1.GetGroupRequest{
+		Group: &v1.GetGroupRequest_Id{Id: config.ID.ValueString()},
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Group not found",
@@ -98,21 +100,21 @@ func (d *groupDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	state := mapGroupToDataSourceModel(getResp.Group)
+	state := mapGroupToDataSourceModel(getResp.Msg.GetGroup())
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapGroupToDataSourceModel(group gitpod.Group) groupDataSourceModel {
+func mapGroupToDataSourceModel(group *v1.Group) groupDataSourceModel {
 	return groupDataSourceModel{
-		ID:             types.StringValue(group.ID),
-		Name:           stringValueOrNull(group.Name),
-		Description:    stringValueOrNull(group.Description),
-		OrganizationID: stringValueOrNull(group.OrganizationID),
-		MemberCount:    types.Int64Value(group.MemberCount),
-		DirectShare:    types.BoolValue(group.DirectShare),
-		SystemManaged:  types.BoolValue(group.SystemManaged),
-		CreatedAt:      timeValueOrNull(group.CreatedAt),
-		UpdatedAt:      timeValueOrNull(group.UpdatedAt),
+		ID:             types.StringValue(group.GetId()),
+		Name:           stringValueOrNull(group.GetName()),
+		Description:    stringValueOrNull(group.GetDescription()),
+		OrganizationID: stringValueOrNull(group.GetOrganizationId()),
+		MemberCount:    types.Int64Value(int64(group.GetMemberCount())),
+		DirectShare:    types.BoolValue(group.GetDirectShare()),
+		SystemManaged:  types.BoolValue(group.GetSystemManaged()),
+		CreatedAt:      timeValueOrNull(group.GetCreatedAt()),
+		UpdatedAt:      timeValueOrNull(group.GetUpdatedAt()),
 	}
 }
 

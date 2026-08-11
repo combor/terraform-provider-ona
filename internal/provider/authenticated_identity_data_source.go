@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -12,7 +14,7 @@ import (
 var _ datasource.DataSource = &authenticatedIdentityDataSource{}
 
 type authenticatedIdentityDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewAuthenticatedIdentityDataSource() datasource.DataSource {
@@ -57,22 +59,22 @@ func (d *authenticatedIdentityDataSource) Configure(_ context.Context, req datas
 }
 
 func (d *authenticatedIdentityDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	getResp, err := d.client.Identity.GetAuthenticatedIdentity(ctx, gitpod.IdentityGetAuthenticatedIdentityParams{})
+	getResp, err := d.client.Services.Identity.GetAuthenticatedIdentity(ctx, connect.NewRequest(&v1.GetAuthenticatedIdentityRequest{}))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read authenticated identity", err.Error())
 		return
 	}
 
-	state := mapAuthenticatedIdentityToDataSourceModel(getResp)
+	state := mapAuthenticatedIdentityToDataSourceModel(getResp.Msg)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapAuthenticatedIdentityToDataSourceModel(resp *gitpod.IdentityGetAuthenticatedIdentityResponse) authenticatedIdentityDataSourceModel {
+func mapAuthenticatedIdentityToDataSourceModel(resp *v1.GetAuthenticatedIdentityResponse) authenticatedIdentityDataSourceModel {
 	return authenticatedIdentityDataSourceModel{
-		ID:               stringValueOrNull(resp.Subject.ID),
-		Principal:        stringValueOrNull(string(resp.Subject.Principal)),
-		OrganizationID:   stringValueOrNull(resp.OrganizationID),
-		OrganizationTier: stringValueOrNull(resp.OrganizationTier),
+		ID:               stringValueOrNull(resp.GetSubject().GetId()),
+		Principal:        stringValueOrNull(enumString(resp.GetSubject().GetPrincipal())),
+		OrganizationID:   stringValueOrNull(resp.GetOrganizationId()),
+		OrganizationTier: stringValueOrNull(resp.GetOrganizationTier()),
 	}
 }
 

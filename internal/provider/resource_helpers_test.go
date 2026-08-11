@@ -1,54 +1,61 @@
 package provider
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // UpdateRunner rejects desiredPhase with a failed_precondition, so the provider
 // must never send it, not even when state carries a phase from a previous read.
 func TestBuildRunnerUpdateParams_NeverSendsDesiredPhase(t *testing.T) {
 	prior := runnerModel{
-		Spec: &runnerSpecModel{DesiredPhase: types.StringValue(string(gitpod.RunnerPhaseActive))},
+		Spec: &runnerSpecModel{DesiredPhase: types.StringValue(v1.RunnerPhase_RUNNER_PHASE_ACTIVE.String())},
 	}
 
 	t.Run("omitted alongside a configuration change", func(t *testing.T) {
 		plan := runnerModel{
 			ID:           types.StringValue("runner-123"),
 			Name:         types.StringValue("runner-name"),
-			ProviderType: types.StringValue(string(gitpod.RunnerProviderAwsEc2)),
+			ProviderType: types.StringValue(v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2.String()),
 			Spec: &runnerSpecModel{
-				DesiredPhase:  types.StringValue(string(gitpod.RunnerPhaseInactive)),
+				DesiredPhase:  types.StringValue(v1.RunnerPhase_RUNNER_PHASE_INACTIVE.String()),
 				Configuration: &runnerConfigModel{AutoUpdate: types.BoolValue(true)},
 			},
 		}
 
-		got := buildRunnerUpdateParams(plan, prior)
+		var diags diag.Diagnostics
+		got := buildRunnerUpdateParams(plan, prior, &diags)
+		require.False(t, diags.HasError())
 
-		assert.True(t, got.Spec.Present)
-		assert.False(t, got.Spec.Value.DesiredPhase.Present)
+		require.NotNil(t, got.Spec)
+		assert.Nil(t, got.Spec.DesiredPhase)
 	})
 
 	t.Run("phase alone leaves the spec out entirely", func(t *testing.T) {
 		plan := runnerModel{
 			ID:           types.StringValue("runner-123"),
 			Name:         types.StringValue("runner-name"),
-			ProviderType: types.StringValue(string(gitpod.RunnerProviderAwsEc2)),
+			ProviderType: types.StringValue(v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2.String()),
 			Spec: &runnerSpecModel{
-				DesiredPhase: types.StringValue(string(gitpod.RunnerPhaseInactive)),
+				DesiredPhase: types.StringValue(v1.RunnerPhase_RUNNER_PHASE_INACTIVE.String()),
 			},
 		}
 
-		got := buildRunnerUpdateParams(plan, prior)
+		var diags diag.Diagnostics
+		got := buildRunnerUpdateParams(plan, prior, &diags)
+		require.False(t, diags.HasError())
 
-		assert.False(t, got.Spec.Present)
-		assert.True(t, got.Name.Present)
+		assert.Nil(t, got.Spec)
+		require.NotNil(t, got.Name)
 	})
 }
 
@@ -118,13 +125,18 @@ func TestStringListValue(t *testing.T) {
 }
 
 func TestTimeValueOrNull(t *testing.T) {
+	t.Run("nil timestamp returns null", func(t *testing.T) {
+		got := timeValueOrNull(nil)
+		assert.True(t, got.IsNull())
+	})
+
 	t.Run("zero time returns null", func(t *testing.T) {
-		got := timeValueOrNull(time.Time{})
+		got := timeValueOrNull(timestamppb.New(time.Time{}))
 		assert.True(t, got.IsNull())
 	})
 
 	t.Run("non-zero time returns RFC3339Nano string", func(t *testing.T) {
-		ts := time.Date(2026, time.March, 2, 15, 4, 5, 123456789, time.UTC)
+		ts := timestamppb.New(time.Date(2026, time.March, 2, 15, 4, 5, 123456789, time.UTC))
 		got := timeValueOrNull(ts)
 		assert.Equal(t, "2026-03-02T15:04:05.123456789Z", got.ValueString())
 	})
@@ -135,7 +147,7 @@ func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
 		AutoUpdate:                    types.BoolUnknown(),
 		DevcontainerImageCacheEnabled: types.BoolValue(true),
 		Region:                        types.StringNull(),
-		ReleaseChannel:                types.StringValue(string(gitpod.RunnerReleaseChannelStable)),
+		ReleaseChannel:                types.StringValue(v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_STABLE.String()),
 		LogLevel:                      types.StringUnknown(),
 		Metrics: &runnerMetricsModel{
 			Enabled:  types.BoolValue(true),
@@ -145,23 +157,23 @@ func TestBuildConfigParam_HandlesKnownNullAndUnknown(t *testing.T) {
 		},
 	}
 
-	got := buildConfigParam(cfg)
+	var diags diag.Diagnostics
+	got := buildConfigParam(cfg, &diags)
+	require.False(t, diags.HasError())
 
-	assert.False(t, got.AutoUpdate.Present)
-	assert.True(t, got.DevcontainerImageCacheEnabled.Present)
-	assert.Equal(t, true, got.DevcontainerImageCacheEnabled.Value)
-	assert.False(t, got.Region.Present)
-	assert.True(t, got.ReleaseChannel.Present)
-	assert.Equal(t, gitpod.RunnerReleaseChannelStable, got.ReleaseChannel.Value)
-	assert.False(t, got.LogLevel.Present)
+	// unknown and null values are never sent; proto3 scalars have no presence,
+	// so they stay at their zero value.
+	assert.False(t, got.GetAutoUpdate())
+	assert.True(t, got.GetDevcontainerImageCacheEnabled())
+	assert.Empty(t, got.GetRegion())
+	assert.Equal(t, v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_STABLE, got.GetReleaseChannel())
+	assert.Equal(t, v1.LogLevel_LOG_LEVEL_UNSPECIFIED, got.GetLogLevel())
 
-	require.True(t, got.Metrics.Present)
-	assert.True(t, got.Metrics.Value.Enabled.Present)
-	assert.Equal(t, true, got.Metrics.Value.Enabled.Value)
-	assert.False(t, got.Metrics.Value.URL.Present)
-	assert.True(t, got.Metrics.Value.Username.Present)
-	assert.Equal(t, "metrics-user", got.Metrics.Value.Username.Value)
-	assert.False(t, got.Metrics.Value.Password.Present)
+	require.NotNil(t, got.GetMetrics())
+	assert.True(t, got.GetMetrics().GetEnabled())
+	assert.Empty(t, got.GetMetrics().GetUrl())
+	assert.Equal(t, "metrics-user", got.GetMetrics().GetUsername())
+	assert.Empty(t, got.GetMetrics().GetPassword())
 }
 
 func TestBuildRunnerUpdateConfigParam_ClearsUpdateWindowWhenRemovedFromConfiguration(t *testing.T) {
@@ -174,14 +186,16 @@ func TestBuildRunnerUpdateConfigParam_ClearsUpdateWindowWhenRemovedFromConfigura
 		},
 	}
 
-	got, present := buildRunnerUpdateConfigParam(cfg, prior)
+	var diags diag.Diagnostics
+	got, present := buildRunnerUpdateConfigParam(cfg, prior, &diags)
+	require.False(t, diags.HasError())
 
 	assert.True(t, present)
-	assert.True(t, got.AutoUpdate.Present)
-	assert.Equal(t, true, got.AutoUpdate.Value)
-	assert.True(t, got.UpdateWindow.Present)
-	assert.False(t, got.UpdateWindow.Value.StartHour.Present)
-	assert.False(t, got.UpdateWindow.Value.EndHour.Present)
+	require.NotNil(t, got.AutoUpdate)
+	assert.True(t, got.GetAutoUpdate())
+	require.NotNil(t, got.GetUpdateWindow())
+	assert.Nil(t, got.GetUpdateWindow().StartHour)
+	assert.Nil(t, got.GetUpdateWindow().EndHour)
 }
 
 func TestBuildRunnerUpdateParams_ClearsUpdateWindowWhenSpecIsRemoved(t *testing.T) {
@@ -199,18 +213,20 @@ func TestBuildRunnerUpdateParams_ClearsUpdateWindowWhenSpecIsRemoved(t *testing.
 		},
 	}
 
-	got := buildRunnerUpdateParams(plan, prior)
+	var diags diag.Diagnostics
+	got := buildRunnerUpdateParams(plan, prior, &diags)
+	require.False(t, diags.HasError())
 
-	assert.True(t, got.Spec.Present)
-	assert.True(t, got.Spec.Value.Configuration.Present)
-	assert.True(t, got.Spec.Value.Configuration.Value.UpdateWindow.Present)
-	assert.False(t, got.Spec.Value.Configuration.Value.UpdateWindow.Value.StartHour.Present)
-	assert.False(t, got.Spec.Value.Configuration.Value.UpdateWindow.Value.EndHour.Present)
+	require.NotNil(t, got.GetSpec())
+	require.NotNil(t, got.GetSpec().GetConfiguration())
+	require.NotNil(t, got.GetSpec().GetConfiguration().GetUpdateWindow())
+	assert.Nil(t, got.GetSpec().GetConfiguration().GetUpdateWindow().StartHour)
+	assert.Nil(t, got.GetSpec().GetConfiguration().GetUpdateWindow().EndHour)
 }
 
 func TestMapUpdateWindowValues_MissingEndHourRemainsNull(t *testing.T) {
-	var window gitpod.UpdateWindow
-	require.NoError(t, json.Unmarshal([]byte(`{"startHour":22}`), &window))
+	window := &v1.UpdateWindow{}
+	require.NoError(t, protojson.Unmarshal([]byte(`{"startHour":22}`), window))
 
 	startHour, endHour, ok := mapUpdateWindowValues(window)
 
@@ -220,8 +236,8 @@ func TestMapUpdateWindowValues_MissingEndHourRemainsNull(t *testing.T) {
 }
 
 func TestMapUpdateWindowValues_ExplicitZeroEndHourRemainsPresent(t *testing.T) {
-	var window gitpod.UpdateWindow
-	require.NoError(t, json.Unmarshal([]byte(`{"startHour":22,"endHour":0}`), &window))
+	window := &v1.UpdateWindow{}
+	require.NoError(t, protojson.Unmarshal([]byte(`{"startHour":22,"endHour":0}`), window))
 
 	startHour, endHour, ok := mapUpdateWindowValues(window)
 
@@ -231,21 +247,21 @@ func TestMapUpdateWindowValues_ExplicitZeroEndHourRemainsPresent(t *testing.T) {
 }
 
 func TestMapRunnerToModel_UpdateWindowMissingEndHourRemainsNull(t *testing.T) {
-	var cfg gitpod.RunnerConfiguration
-	require.NoError(t, json.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), &cfg))
+	cfg := &v1.RunnerConfiguration{}
+	require.NoError(t, protojson.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true},"updateWindow":{"startHour":22}}`), cfg))
 
 	prior := runnerModel{
 		Spec: &runnerSpecModel{
 			Configuration: &runnerConfigModel{},
 		},
 	}
-	runner := gitpod.Runner{
-		RunnerID: "runner-123",
+	runner := &v1.Runner{
+		RunnerId: "runner-123",
 		Name:     "runner-name",
-		Provider: gitpod.RunnerProviderAwsEc2,
-		Spec: gitpod.RunnerSpec{
-			DesiredPhase:  gitpod.RunnerPhaseActive,
-			Variant:       gitpod.RunnerVariantStandard,
+		Provider: v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
+		Spec: &v1.RunnerSpec{
+			DesiredPhase:  v1.RunnerPhase_RUNNER_PHASE_ACTIVE,
+			Variant:       v1.RunnerVariant_RUNNER_VARIANT_STANDARD,
 			Configuration: cfg,
 		},
 	}
@@ -271,29 +287,29 @@ func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
 		},
 	}
 
-	runner := gitpod.Runner{
-		RunnerID:        "runner-123",
+	runner := &v1.Runner{
+		RunnerId:        "runner-123",
 		Name:            "runner-name",
-		Provider:        gitpod.RunnerProviderAwsEc2,
-		RunnerManagerID: "",
-		Spec: gitpod.RunnerSpec{
-			DesiredPhase: gitpod.RunnerPhaseActive,
-			Variant:      gitpod.RunnerVariantStandard,
-			Configuration: gitpod.RunnerConfiguration{
+		Provider:        v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
+		RunnerManagerId: "",
+		Spec: &v1.RunnerSpec{
+			DesiredPhase: v1.RunnerPhase_RUNNER_PHASE_ACTIVE,
+			Variant:      v1.RunnerVariant_RUNNER_VARIANT_STANDARD,
+			Configuration: &v1.RunnerConfiguration{
 				AutoUpdate:                    true,
 				DevcontainerImageCacheEnabled: true,
-				ReleaseChannel:                gitpod.RunnerReleaseChannelStable,
-				LogLevel:                      gitpod.LogLevelInfo,
+				ReleaseChannel:                v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_STABLE,
+				LogLevel:                      v1.LogLevel_LOG_LEVEL_INFO,
 				Region:                        "",
-				Metrics: gitpod.MetricsConfiguration{
+				Metrics: &v1.MetricsConfiguration{
 					Enabled:  true,
-					URL:      "https://metrics.example",
+					Url:      "https://metrics.example",
 					Username: "metrics-user",
 				},
 			},
 		},
-		Status: gitpod.RunnerStatus{
-			Phase:   gitpod.RunnerPhaseDegraded,
+		Status: &v1.RunnerStatus{
+			Phase:   v1.RunnerPhase_RUNNER_PHASE_DEGRADED,
 			Message: "degraded",
 			Version: "1.2.3",
 			Region:  "eu-central-1",
@@ -304,11 +320,11 @@ func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
 
 	assert.Equal(t, "runner-123", got.ID.ValueString())
 	assert.Equal(t, "runner-name", got.Name.ValueString())
-	assert.Equal(t, string(gitpod.RunnerProviderAwsEc2), got.ProviderType.ValueString())
+	assert.Equal(t, v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2.String(), got.ProviderType.ValueString())
 	assert.True(t, got.RunnerManagerID.IsNull())
 
 	require.NotNil(t, got.Spec)
-	assert.Equal(t, string(gitpod.RunnerVariantStandard), got.Spec.Variant.ValueString())
+	assert.Equal(t, v1.RunnerVariant_RUNNER_VARIANT_STANDARD.String(), got.Spec.Variant.ValueString())
 	require.NotNil(t, got.Spec.Configuration)
 	assert.Equal(t, true, got.Spec.Configuration.DevcontainerImageCacheEnabled.ValueBool())
 	assert.Equal(t, "us-west-2", got.Spec.Configuration.Region.ValueString())
@@ -321,5 +337,97 @@ func TestMapRunnerToModel_PreservesPriorStateFields(t *testing.T) {
 	statusAttrs := got.Status.Attributes()
 	phase, ok := statusAttrs["phase"].(types.String)
 	require.True(t, ok)
-	assert.Equal(t, string(gitpod.RunnerPhaseDegraded), phase.ValueString())
+	assert.Equal(t, v1.RunnerPhase_RUNNER_PHASE_DEGRADED.String(), phase.ValueString())
+}
+
+func TestEnumValue_RejectsUnknownName(t *testing.T) {
+	var diags diag.Diagnostics
+
+	got := enumValue[v1.RunnerProvider]("provider_type", "RUNNER_PROVIDER_TYPO", v1.RunnerProvider_value, &diags)
+
+	require.True(t, diags.HasError())
+	assert.Equal(t, v1.RunnerProvider_RUNNER_PROVIDER_UNSPECIFIED, got)
+	assert.Contains(t, diags.Errors()[0].Detail(), "RUNNER_PROVIDER_TYPO")
+	assert.Contains(t, diags.Errors()[0].Detail(), "RUNNER_PROVIDER_AWS_EC2")
+}
+
+func TestEnumValue_AcceptsKnownName(t *testing.T) {
+	var diags diag.Diagnostics
+
+	got := enumValue[v1.RunnerProvider]("provider_type", "RUNNER_PROVIDER_AWS_EC2", v1.RunnerProvider_value, &diags)
+
+	require.False(t, diags.HasError())
+	assert.Equal(t, v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2, got)
+}
+
+func TestDurationString(t *testing.T) {
+	assert.Equal(t, "", durationString(nil))
+	assert.Equal(t, "3600s", durationString(durationpb.New(time.Hour)))
+	assert.Equal(t, "1.5s", durationString(durationpb.New(1500*time.Millisecond)))
+}
+
+func TestTimeoutValueWithPrior(t *testing.T) {
+	t.Run("keeps an equivalent configured spelling", func(t *testing.T) {
+		got := timeoutValueWithPrior(durationpb.New(time.Hour), types.StringValue("1h"))
+		assert.Equal(t, "1h", got.ValueString())
+	})
+
+	t.Run("uses the API spelling when the duration differs", func(t *testing.T) {
+		got := timeoutValueWithPrior(durationpb.New(time.Hour), types.StringValue("30m"))
+		assert.Equal(t, "3600s", got.ValueString())
+	})
+
+	t.Run("uses the API spelling when prior is null", func(t *testing.T) {
+		got := timeoutValueWithPrior(durationpb.New(time.Hour), types.StringNull())
+		assert.Equal(t, "3600s", got.ValueString())
+	})
+
+	t.Run("uses the API spelling when prior is unparseable", func(t *testing.T) {
+		got := timeoutValueWithPrior(durationpb.New(time.Hour), types.StringValue("not-a-duration"))
+		assert.Equal(t, "3600s", got.ValueString())
+	})
+}
+
+func TestEnumValue_RejectsUnspecifiedName(t *testing.T) {
+	var diags diag.Diagnostics
+
+	got := enumValue[v1.RunnerReleaseChannel]("release_channel",
+		v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_UNSPECIFIED.String(),
+		v1.RunnerReleaseChannel_value, &diags)
+
+	require.True(t, diags.HasError())
+	assert.Equal(t, v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_UNSPECIFIED, got)
+}
+
+func TestValidatedHour(t *testing.T) {
+	t.Run("accepts the documented range", func(t *testing.T) {
+		for _, hour := range []int64{0, 12, 23} {
+			var diags diag.Diagnostics
+			got, ok := validatedHour("start_hour", types.Int64Value(hour), &diags)
+			require.True(t, ok)
+			require.False(t, diags.HasError())
+			assert.Equal(t, hour, got)
+		}
+	})
+
+	t.Run("rejects out-of-range values that would wrap when narrowed", func(t *testing.T) {
+		for _, hour := range []int64{-1, 24, 4294967296} {
+			var diags diag.Diagnostics
+			_, ok := validatedHour("hour_utc", types.Int64Value(hour), &diags)
+			assert.False(t, ok)
+			assert.True(t, diags.HasError())
+		}
+	})
+}
+
+func TestBuildUpdateWindowParam_RejectsOutOfRangeHours(t *testing.T) {
+	var diags diag.Diagnostics
+
+	// 2^32 narrows to 0 as a uint32, which would look like a valid hour.
+	got := buildUpdateWindowParam(&runnerUpdateWindowModel{
+		StartHour: types.Int64Value(4294967296),
+	}, &diags)
+
+	assert.True(t, diags.HasError())
+	assert.Nil(t, got.StartHour)
 }

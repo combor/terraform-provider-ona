@@ -43,7 +43,7 @@ data "ona_project" "example" {
 
 Read-Only:
 
-- `specs` (Attributes List) Initializer specs. Each entry may define `context_url`, `git`, or both. (see [below for nested schema](#nestedatt--initializer--specs))
+- `specs` (Attributes List) Initializer specs. Each entry defines exactly one of `context_url` or `git`. (see [below for nested schema](#nestedatt--initializer--specs))
 
 <a id="nestedatt--initializer--specs"></a>
 ### Nested Schema for `initializer.specs`

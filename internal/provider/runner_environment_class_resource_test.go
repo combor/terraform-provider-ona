@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,12 +59,12 @@ func TestEnvClassPlanWithID(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_AWSEC2Configuration(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:          "env-class-aws-ec2",
-		RunnerID:    "runner-aws-ec2",
+	environmentClass := &v1.EnvironmentClass{
+		Id:          "env-class-aws-ec2",
+		RunnerId:    "runner-aws-ec2",
 		DisplayName: "Large",
 		Description: "8 vCPU / 32 GiB / 200 GiB disk",
-		Configuration: []shared.FieldValue{
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "m6i.2xlarge"},
 			{Key: "diskSizeGB", Value: "200"},
 			{Key: "spot", Value: "false"},
@@ -87,12 +87,12 @@ func TestMapEnvironmentClassToModel_AWSEC2Configuration(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_EmptyOptionalFields(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:            "env-class-789",
-		RunnerID:      "runner-abc",
+	environmentClass := &v1.EnvironmentClass{
+		Id:            "env-class-789",
+		RunnerId:      "runner-abc",
 		DisplayName:   "",
 		Description:   "",
-		Configuration: []shared.FieldValue{},
+		Configuration: []*v1.FieldValue{},
 		Enabled:       false,
 	}
 
@@ -107,10 +107,10 @@ func TestMapEnvironmentClassToModel_EmptyOptionalFields(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_MinimalConfiguration(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:       "env-class-minimal",
-		RunnerID: "runner-aws-ec2",
-		Configuration: []shared.FieldValue{
+	environmentClass := &v1.EnvironmentClass{
+		Id:       "env-class-minimal",
+		RunnerId: "runner-aws-ec2",
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "t3.medium"},
 		},
 		Enabled: true,
@@ -128,12 +128,12 @@ func TestMapEnvironmentClassToModel_MinimalConfiguration(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_DisabledClass(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:          "env-class-disabled",
-		RunnerID:    "runner-xyz",
+	environmentClass := &v1.EnvironmentClass{
+		Id:          "env-class-disabled",
+		RunnerId:    "runner-xyz",
 		DisplayName: "Disabled Class",
 		Description: "This class is disabled",
-		Configuration: []shared.FieldValue{
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "t3.micro"},
 		},
 		Enabled: false,
@@ -148,12 +148,12 @@ func TestMapEnvironmentClassToModel_DisabledClass(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_AWSEC2SpotInstance(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:          "env-class-aws-spot",
-		RunnerID:    "runner-aws-ec2",
+	environmentClass := &v1.EnvironmentClass{
+		Id:          "env-class-aws-spot",
+		RunnerId:    "runner-aws-ec2",
 		DisplayName: "Large Spot",
 		Description: "8 vCPU / 32 GiB / 200 GiB disk (Spot)",
-		Configuration: []shared.FieldValue{
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "m7i.8xlarge"},
 			{Key: "diskSizeGB", Value: "200"},
 			{Key: "spot", Value: "true"},
@@ -175,11 +175,11 @@ func TestMapEnvironmentClassToModel_AWSEC2SpotInstance(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_EmptyConfiguration(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:            "env-class-no-config",
-		RunnerID:      "runner-no-config",
+	environmentClass := &v1.EnvironmentClass{
+		Id:            "env-class-no-config",
+		RunnerId:      "runner-no-config",
 		DisplayName:   "No Config",
-		Configuration: []shared.FieldValue{},
+		Configuration: []*v1.FieldValue{},
 		Enabled:       true,
 	}
 
@@ -189,12 +189,12 @@ func TestMapEnvironmentClassToModel_EmptyConfiguration(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_NullDescription(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:          "env-class-null-desc",
-		RunnerID:    "runner-null-desc",
+	environmentClass := &v1.EnvironmentClass{
+		Id:          "env-class-null-desc",
+		RunnerId:    "runner-null-desc",
 		DisplayName: "Has Name",
 		Description: "",
-		Configuration: []shared.FieldValue{
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "t3.medium"},
 		},
 		Enabled: true,
@@ -209,12 +209,12 @@ func TestMapEnvironmentClassToModel_NullDescription(t *testing.T) {
 }
 
 func TestMapEnvironmentClassToModel_ManagedRunner(t *testing.T) {
-	environmentClass := shared.EnvironmentClass{
-		ID:          "env-class-managed",
-		RunnerID:    "runner-managed",
+	environmentClass := &v1.EnvironmentClass{
+		Id:          "env-class-managed",
+		RunnerId:    "runner-managed",
 		DisplayName: "Regular",
 		Description: "4 vCPU / 16 GiB / 80 GiB disk",
-		Configuration: []shared.FieldValue{
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "m6i.xlarge"},
 			{Key: "diskSizeGB", Value: "80"},
 			{Key: "spot", Value: "false"},
@@ -238,10 +238,10 @@ func TestMapEnvironmentClassToModel_ManagedRunner(t *testing.T) {
 func TestMapEnvironmentClassToModel_ArbitraryKeysAccepted(t *testing.T) {
 	// The API accepts arbitrary configuration keys without validation.
 	// Invalid keys are silently ignored by the runner but stored in the API.
-	environmentClass := shared.EnvironmentClass{
-		ID:       "env-class-arbitrary",
-		RunnerID: "runner-arbitrary",
-		Configuration: []shared.FieldValue{
+	environmentClass := &v1.EnvironmentClass{
+		Id:       "env-class-arbitrary",
+		RunnerId: "runner-arbitrary",
+		Configuration: []*v1.FieldValue{
 			{Key: "instanceType", Value: "t3.medium"},
 			{Key: "customKey", Value: "customValue"},
 			{Key: "anotherKey", Value: "anotherValue"},

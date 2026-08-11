@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -15,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 var (
@@ -23,7 +26,7 @@ var (
 )
 
 type projectResource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewProjectResource() resource.Resource {
@@ -137,7 +140,7 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Attributes: map[string]schema.Attribute{
 					"specs": schema.ListNestedAttribute{
 						Required:            true,
-						MarkdownDescription: "Initializer specs. Each entry may define `context_url`, `git`, or both.",
+						MarkdownDescription: "Initializer specs. Each entry defines exactly one of `context_url` or `git`; use separate entries to combine them.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"context_url": schema.SingleNestedAttribute{
@@ -343,13 +346,13 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	createResp, err := r.client.Projects.New(ctx, params)
+	createResp, err := r.client.Services.Project.CreateProject(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create project", err.Error())
 		return
 	}
 
-	project := createResp.Project
+	project := createResp.Msg.GetProject()
 
 	recommendedEditorsModel, recommendedEditorsDiags := projectRecommendedEditorsFromMap(ctx, plan.RecommendedEditors)
 	resp.Diagnostics.Append(recommendedEditorsDiags...)
@@ -370,30 +373,30 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 			return
 		}
 
-		updateParams := gitpod.ProjectUpdateParams{
-			ProjectID: gitpod.F(project.ID),
+		updateParams := &v1.UpdateProjectRequest{
+			ProjectId: project.GetId(),
 		}
 		recommendedEditors, updateDiags := buildRecommendedEditorsParam(ctx, recommendedEditorsModel)
 		resp.Diagnostics.Append(updateDiags...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		updateParams.RecommendedEditors = gitpod.F(recommendedEditors)
+		updateParams.RecommendedEditors = recommendedEditors
 
-		updateResp, err := r.client.Projects.Update(ctx, updateParams)
+		updateResp, err := r.client.Services.Project.UpdateProject(ctx, connect.NewRequest(updateParams))
 		if err != nil {
 			resp.Diagnostics.AddWarning(
 				"Project created without recommended editors",
 				fmt.Sprintf(
 					"Project %s was created successfully, but setting recommended_editors failed: %s. State was saved without recommended_editors so a future plan/apply can retry reconciliation.",
-					project.ID,
+					project.GetId(),
 					err.Error(),
 				),
 			)
 			return
 		}
 
-		project = updateResp.Project
+		project = updateResp.Msg.GetProject()
 	}
 
 	state, diags := mapProjectToModel(ctx, project, plan)
@@ -411,9 +414,9 @@ func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	getResp, err := r.client.Projects.Get(ctx, gitpod.ProjectGetParams{
-		ProjectID: gitpod.F(state.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.Project.GetProject(ctx, connect.NewRequest(&v1.GetProjectRequest{
+		ProjectId: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -424,7 +427,7 @@ func (r *projectResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	newState, diags := mapProjectToModel(ctx, getResp.Project, state)
+	newState, diags := mapProjectToModel(ctx, getResp.Msg.GetProject(), state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -445,13 +448,13 @@ func (r *projectResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	updateResp, err := r.client.Projects.Update(ctx, params)
+	updateResp, err := r.client.Services.Project.UpdateProject(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update project", err.Error())
 		return
 	}
 
-	state, diags := mapProjectToModel(ctx, updateResp.Project, plan)
+	state, diags := mapProjectToModel(ctx, updateResp.Msg.GetProject(), plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -466,9 +469,9 @@ func (r *projectResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	_, err := r.client.Projects.Delete(ctx, gitpod.ProjectDeleteParams{
-		ProjectID: gitpod.F(state.ID.ValueString()),
-	})
+	_, err := r.client.Services.Project.DeleteProject(ctx, connect.NewRequest(&v1.DeleteProjectRequest{
+		ProjectId: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			return
@@ -482,226 +485,250 @@ func (r *projectResource) ImportState(ctx context.Context, req resource.ImportSt
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func buildProjectNewParams(ctx context.Context, plan projectModel) (gitpod.ProjectNewParams, diag.Diagnostics) {
+func buildProjectNewParams(ctx context.Context, plan projectModel) (*v1.CreateProjectRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	initializer, initDiags := buildEnvironmentInitializerParam(plan.Initializer)
 	diags.Append(initDiags...)
 	if diags.HasError() {
-		return gitpod.ProjectNewParams{}, diags
+		return nil, diags
 	}
 
-	params := gitpod.ProjectNewParams{
-		Name:        gitpod.F(plan.Name.ValueString()),
-		Initializer: gitpod.F(initializer),
+	params := &v1.CreateProjectRequest{
+		Name:        plan.Name.ValueString(),
+		Initializer: initializer,
 	}
 
 	if !plan.AutomationsFilePath.IsNull() && !plan.AutomationsFilePath.IsUnknown() {
-		params.AutomationsFilePath = gitpod.F(plan.AutomationsFilePath.ValueString())
+		params.AutomationsFilePath = plan.AutomationsFilePath.ValueString()
 	}
 	if !plan.DevcontainerFilePath.IsNull() && !plan.DevcontainerFilePath.IsUnknown() {
-		params.DevcontainerFilePath = gitpod.F(plan.DevcontainerFilePath.ValueString())
+		params.DevcontainerFilePath = plan.DevcontainerFilePath.ValueString()
 	}
 	if !plan.TechnicalDescription.IsNull() && !plan.TechnicalDescription.IsUnknown() {
-		params.TechnicalDescription = gitpod.F(plan.TechnicalDescription.ValueString())
+		params.TechnicalDescription = plan.TechnicalDescription.ValueString()
 	}
 	prebuildModel, prebuildModelDiags := projectPrebuildConfigurationModelFromObject(ctx, plan.PrebuildConfiguration)
 	diags.Append(prebuildModelDiags...)
 	if diags.HasError() {
-		return gitpod.ProjectNewParams{}, diags
+		return nil, diags
 	}
 	if prebuildModel != nil {
 		prebuild, prebuildDiags := buildProjectPrebuildConfigurationParam(ctx, prebuildModel)
 		diags.Append(prebuildDiags...)
 		if diags.HasError() {
-			return gitpod.ProjectNewParams{}, diags
+			return nil, diags
 		}
-		params.PrebuildConfiguration = gitpod.F(prebuild)
+		params.PrebuildConfiguration = prebuild
 	}
 
 	return params, diags
 }
 
-func buildProjectUpdateParams(ctx context.Context, plan projectModel) (gitpod.ProjectUpdateParams, diag.Diagnostics) {
+func buildProjectUpdateParams(ctx context.Context, plan projectModel) (*v1.UpdateProjectRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	params := gitpod.ProjectUpdateParams{
-		ProjectID: gitpod.F(plan.ID.ValueString()),
-		Name:      gitpod.F(plan.Name.ValueString()),
+	params := &v1.UpdateProjectRequest{
+		ProjectId: plan.ID.ValueString(),
+		Name:      plan.Name.ValueStringPointer(),
 	}
 
 	initializer, initDiags := buildEnvironmentInitializerParam(plan.Initializer)
 	diags.Append(initDiags...)
 	if diags.HasError() {
-		return gitpod.ProjectUpdateParams{}, diags
+		return nil, diags
 	}
-	params.Initializer = gitpod.F(initializer)
+	params.Initializer = initializer
 
 	if !plan.AutomationsFilePath.IsNull() && !plan.AutomationsFilePath.IsUnknown() {
-		params.AutomationsFilePath = gitpod.F(plan.AutomationsFilePath.ValueString())
+		params.AutomationsFilePath = plan.AutomationsFilePath.ValueStringPointer()
 	}
 	if !plan.DevcontainerFilePath.IsNull() && !plan.DevcontainerFilePath.IsUnknown() {
-		params.DevcontainerFilePath = gitpod.F(plan.DevcontainerFilePath.ValueString())
+		params.DevcontainerFilePath = plan.DevcontainerFilePath.ValueStringPointer()
 	}
 	if !plan.TechnicalDescription.IsNull() && !plan.TechnicalDescription.IsUnknown() {
-		params.TechnicalDescription = gitpod.F(plan.TechnicalDescription.ValueString())
+		params.TechnicalDescription = plan.TechnicalDescription.ValueStringPointer()
 	}
 	prebuildModel, prebuildModelDiags := projectPrebuildConfigurationModelFromObject(ctx, plan.PrebuildConfiguration)
 	diags.Append(prebuildModelDiags...)
 	if diags.HasError() {
-		return gitpod.ProjectUpdateParams{}, diags
+		return nil, diags
 	}
 	if prebuildModel != nil {
 		prebuild, prebuildDiags := buildProjectPrebuildConfigurationParam(ctx, prebuildModel)
 		diags.Append(prebuildDiags...)
 		if diags.HasError() {
-			return gitpod.ProjectUpdateParams{}, diags
+			return nil, diags
 		}
-		params.PrebuildConfiguration = gitpod.F(prebuild)
+		params.PrebuildConfiguration = prebuild
 	}
 	recommendedEditorsModel, recommendedEditorsDiags := projectRecommendedEditorsFromMap(ctx, plan.RecommendedEditors)
 	diags.Append(recommendedEditorsDiags...)
 	if diags.HasError() {
-		return gitpod.ProjectUpdateParams{}, diags
+		return nil, diags
 	}
 	if recommendedEditorsModel != nil {
 		recommendedEditors, recDiags := buildRecommendedEditorsParam(ctx, recommendedEditorsModel)
 		diags.Append(recDiags...)
 		if diags.HasError() {
-			return gitpod.ProjectUpdateParams{}, diags
+			return nil, diags
 		}
-		params.RecommendedEditors = gitpod.F(recommendedEditors)
+		params.RecommendedEditors = recommendedEditors
 	}
 
 	return params, diags
 }
 
-func buildEnvironmentInitializerParam(initializer *projectInitializerModel) (gitpod.EnvironmentInitializerParam, diag.Diagnostics) {
+func buildEnvironmentInitializerParam(initializer *projectInitializerModel) (*v1.EnvironmentInitializer, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	if initializer == nil || len(initializer.Specs) == 0 {
 		diags.AddError("Missing initializer specs", "initializer.specs must contain at least one entry.")
-		return gitpod.EnvironmentInitializerParam{}, diags
+		return nil, diags
 	}
 
-	specs := make([]gitpod.EnvironmentInitializerSpecParam, 0, len(initializer.Specs))
+	specs := make([]*v1.EnvironmentInitializer_Spec, 0, len(initializer.Specs))
 	for idx, spec := range initializer.Specs {
 		if spec.ContextURL == nil && spec.Git == nil {
 			diags.AddError("Invalid initializer spec",
 				fmt.Sprintf("initializer.specs[%d] must set at least one of context_url or git.", idx))
 			continue
 		}
+		if spec.ContextURL != nil && spec.Git != nil {
+			diags.AddError("Invalid initializer spec",
+				fmt.Sprintf("initializer.specs[%d] must set exactly one of context_url or git, not both.", idx))
+			continue
+		}
 
-		specParam := gitpod.EnvironmentInitializerSpecParam{}
+		specParam := &v1.EnvironmentInitializer_Spec{}
 		if spec.ContextURL != nil {
-			specParam.ContextURL = gitpod.F(gitpod.EnvironmentInitializerSpecsContextURLParam{
-				URL: gitpod.F(spec.ContextURL.URL.ValueString()),
-			})
+			specParam.Spec = &v1.EnvironmentInitializer_Spec_ContextUrl{
+				ContextUrl: &v1.ContextURLInitializer{
+					Url: spec.ContextURL.URL.ValueString(),
+				},
+			}
 		}
 		if spec.Git != nil {
-			gitParam := gitpod.EnvironmentInitializerSpecsGitParam{
-				RemoteUri: gitpod.F(spec.Git.RemoteURI.ValueString()),
+			gitParam := &v1.GitInitializer{
+				RemoteUri: spec.Git.RemoteURI.ValueString(),
 			}
 			if !spec.Git.CheckoutLocation.IsNull() && !spec.Git.CheckoutLocation.IsUnknown() {
-				gitParam.CheckoutLocation = gitpod.F(spec.Git.CheckoutLocation.ValueString())
+				gitParam.CheckoutLocation = spec.Git.CheckoutLocation.ValueString()
 			}
 			if !spec.Git.CloneTarget.IsNull() && !spec.Git.CloneTarget.IsUnknown() {
-				gitParam.CloneTarget = gitpod.F(spec.Git.CloneTarget.ValueString())
+				gitParam.CloneTarget = spec.Git.CloneTarget.ValueString()
 			}
 			if !spec.Git.TargetMode.IsNull() && !spec.Git.TargetMode.IsUnknown() {
-				gitParam.TargetMode = gitpod.F(gitpod.EnvironmentInitializerSpecsGitTargetMode(spec.Git.TargetMode.ValueString()))
+				gitParam.TargetMode = enumValue[v1.GitInitializer_CloneTargetMode](
+					fmt.Sprintf("initializer.specs[%d].git.target_mode", idx),
+					spec.Git.TargetMode.ValueString(), v1.GitInitializer_CloneTargetMode_value, &diags)
 			}
 			if !spec.Git.UpstreamRemoteURI.IsNull() && !spec.Git.UpstreamRemoteURI.IsUnknown() {
-				gitParam.UpstreamRemoteUri = gitpod.F(spec.Git.UpstreamRemoteURI.ValueString())
+				gitParam.UpstreamRemoteUri = spec.Git.UpstreamRemoteURI.ValueString()
 			}
 
-			specParam.Git = gitpod.F(gitParam)
+			specParam.Spec = &v1.EnvironmentInitializer_Spec_Git{Git: gitParam}
 		}
 
 		specs = append(specs, specParam)
 	}
 
 	if diags.HasError() {
-		return gitpod.EnvironmentInitializerParam{}, diags
+		return nil, diags
 	}
 
-	return gitpod.EnvironmentInitializerParam{
-		Specs: gitpod.F(specs),
+	return &v1.EnvironmentInitializer{
+		Specs: specs,
 	}, diags
 }
 
-func buildProjectPrebuildConfigurationParam(ctx context.Context, cfg *projectPrebuildConfigurationModel) (gitpod.ProjectPrebuildConfigurationParam, diag.Diagnostics) {
+func buildProjectPrebuildConfigurationParam(ctx context.Context, cfg *projectPrebuildConfigurationModel) (*v1.ProjectPrebuildConfiguration, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	params := gitpod.ProjectPrebuildConfigurationParam{}
+	params := &v1.ProjectPrebuildConfiguration{}
 
 	if !cfg.Enabled.IsNull() && !cfg.Enabled.IsUnknown() {
-		params.Enabled = gitpod.F(cfg.Enabled.ValueBool())
+		params.Enabled = cfg.Enabled.ValueBool()
 	}
 	if !cfg.EnableJetbrainsWarmup.IsNull() && !cfg.EnableJetbrainsWarmup.IsUnknown() {
-		params.EnableJetbrainsWarmup = gitpod.F(cfg.EnableJetbrainsWarmup.ValueBool())
+		params.EnableJetbrainsWarmup = cfg.EnableJetbrainsWarmup.ValueBool()
 	}
 	if !cfg.EnvironmentClassIDs.IsNull() && !cfg.EnvironmentClassIDs.IsUnknown() {
 		var values []string
 		diags.Append(cfg.EnvironmentClassIDs.ElementsAs(ctx, &values, false)...)
 		if diags.HasError() {
-			return gitpod.ProjectPrebuildConfigurationParam{}, diags
+			return nil, diags
 		}
-		params.EnvironmentClassIDs = gitpod.F(values)
+		params.EnvironmentClassIds = values
 	}
 	if cfg.Executor != nil {
-		params.Executor = gitpod.F(shared.SubjectParam{
-			ID:        gitpod.F(cfg.Executor.ID.ValueString()),
-			Principal: gitpod.F(shared.Principal(cfg.Executor.Principal.ValueString())),
-		})
+		params.Executor = &v1.Subject{
+			Id: cfg.Executor.ID.ValueString(),
+			Principal: enumValue[v1.Principal]("prebuild_configuration.executor.principal",
+				cfg.Executor.Principal.ValueString(), v1.Principal_value, &diags),
+		}
 	}
 	if !cfg.Timeout.IsNull() && !cfg.Timeout.IsUnknown() {
-		params.Timeout = gitpod.F(cfg.Timeout.ValueString())
+		timeout, err := time.ParseDuration(cfg.Timeout.ValueString())
+		if err != nil {
+			diags.AddError("Invalid prebuild timeout",
+				fmt.Sprintf("prebuild_configuration.timeout must be a valid duration such as `3600s`: %s", err.Error()))
+			return nil, diags
+		}
+		params.Timeout = durationpb.New(timeout)
 	}
 	if cfg.Trigger != nil && cfg.Trigger.DailySchedule != nil {
-		params.Trigger = gitpod.F(gitpod.ProjectPrebuildConfigurationTriggerParam{
-			DailySchedule: gitpod.F(gitpod.ProjectPrebuildConfigurationTriggerDailyScheduleParam{
-				HourUtc: gitpod.F(cfg.Trigger.DailySchedule.HourUTC.ValueInt64()),
-			}),
-		})
+		hourUTC, ok := validatedHour("prebuild_configuration.trigger.daily_schedule.hour_utc",
+			cfg.Trigger.DailySchedule.HourUTC, &diags)
+		if !ok {
+			return nil, diags
+		}
+
+		params.Trigger = &v1.PrebuildTrigger{
+			Trigger: &v1.PrebuildTrigger_DailySchedule_{
+				DailySchedule: &v1.PrebuildTrigger_DailySchedule{
+					HourUtc: int32(hourUTC),
+				},
+			},
+		}
 	}
 
 	return params, diags
 }
 
-func buildRecommendedEditorsParam(ctx context.Context, editors map[string]projectRecommendedEditor) (gitpod.RecommendedEditorsParam, diag.Diagnostics) {
+func buildRecommendedEditorsParam(ctx context.Context, editors map[string]projectRecommendedEditor) (*v1.RecommendedEditors, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	result := make(map[string]gitpod.RecommendedEditorsEditorParam, len(editors))
+	result := make(map[string]*v1.EditorVersions, len(editors))
 
 	for alias, editor := range editors {
 		var versions []string
 		if !editor.Versions.IsNull() && !editor.Versions.IsUnknown() {
 			diags.Append(editor.Versions.ElementsAs(ctx, &versions, false)...)
 			if diags.HasError() {
-				return gitpod.RecommendedEditorsParam{}, diags
+				return nil, diags
 			}
 		}
 
-		result[alias] = gitpod.RecommendedEditorsEditorParam{
-			Versions: gitpod.F(versions),
+		result[alias] = &v1.EditorVersions{
+			Versions: versions,
 		}
 	}
 
-	return gitpod.RecommendedEditorsParam{
-		Editors: gitpod.F(result),
+	return &v1.RecommendedEditors{
+		Editors: result,
 	}, diags
 }
 
-func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projectModel) (projectModel, diag.Diagnostics) {
+func mapProjectToModel(ctx context.Context, project *v1.Project, prior projectModel) (projectModel, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	state := projectModel{
-		ID:                   types.StringValue(project.ID),
-		Name:                 mergeStringWithPrior(project.Metadata.Name, prior.Name),
-		AutomationsFilePath:  mergeStringWithPrior(project.AutomationsFilePath, prior.AutomationsFilePath),
-		DevcontainerFilePath: mergeStringWithPrior(project.DevcontainerFilePath, prior.DevcontainerFilePath),
-		TechnicalDescription: mergeStringWithPrior(project.TechnicalDescription, prior.TechnicalDescription),
-		DesiredPhase:         mergeStringWithPrior(string(project.DesiredPhase), prior.DesiredPhase),
-		Initializer:          mapProjectInitializerToModel(project.Initializer, prior.Initializer),
+		ID:                   types.StringValue(project.GetId()),
+		Name:                 mergeStringWithPrior(project.GetMetadata().GetName(), prior.Name),
+		AutomationsFilePath:  mergeStringWithPrior(project.GetAutomationsFilePath(), prior.AutomationsFilePath),
+		DevcontainerFilePath: mergeStringWithPrior(project.GetDevcontainerFilePath(), prior.DevcontainerFilePath),
+		TechnicalDescription: mergeStringWithPrior(project.GetTechnicalDescription(), prior.TechnicalDescription),
+		DesiredPhase:         mergeStringWithPrior(enumString(project.GetDesiredPhase()), prior.DesiredPhase),
+		Initializer:          mapProjectInitializerToModel(project.GetInitializer(), prior.Initializer),
 	}
 
 	prebuildPrior, prebuildPriorDiags := projectPrebuildConfigurationModelFromObject(ctx, prior.PrebuildConfiguration)
@@ -710,7 +737,7 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 		return projectModel{}, diags
 	}
 	prebuildConfig := mapProjectPrebuildConfigurationToModel(
-		project.PrebuildConfiguration,
+		project.GetPrebuildConfiguration(),
 		prebuildPrior,
 	)
 	prebuildValue, prebuildValueDiags := projectPrebuildConfigurationObjectValue(ctx, prebuildConfig)
@@ -725,7 +752,7 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 	if diags.HasError() {
 		return projectModel{}, diags
 	}
-	recommendedEditors := mapRecommendedEditorsToModel(project.RecommendedEditors, recommendedEditorsPrior)
+	recommendedEditors := mapRecommendedEditorsToModel(project.GetRecommendedEditors(), recommendedEditorsPrior)
 	recommendedEditorsValue, recommendedEditorsValueDiags := projectRecommendedEditorsMapValue(ctx, recommendedEditors)
 	diags.Append(recommendedEditorsValueDiags...)
 	if diags.HasError() {
@@ -734,11 +761,11 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 	state.RecommendedEditors = recommendedEditorsValue
 
 	metadataValue, metadataDiags := projectMetadataObjectValue(ctx, &projectMetadataModel{
-		Name:           stringValueOrNull(project.Metadata.Name),
-		OrganizationID: stringValueOrNull(project.Metadata.OrganizationID),
-		CreatedAt:      timeValueOrNull(project.Metadata.CreatedAt),
-		UpdatedAt:      timeValueOrNull(project.Metadata.UpdatedAt),
-		Creator:        mapSubjectToModel(project.Metadata.Creator, nil),
+		Name:           stringValueOrNull(project.GetMetadata().GetName()),
+		OrganizationID: stringValueOrNull(project.GetMetadata().GetOrganizationId()),
+		CreatedAt:      timeValueOrNull(project.GetMetadata().GetCreatedAt()),
+		UpdatedAt:      timeValueOrNull(project.GetMetadata().GetUpdatedAt()),
+		Creator:        mapSubjectToModel(project.GetMetadata().GetCreator(), nil),
 	})
 	diags.Append(metadataDiags...)
 	if diags.HasError() {
@@ -747,8 +774,8 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 	state.Metadata = metadataValue
 
 	usedByValue, usedByDiags := projectUsedByObjectValue(ctx, &projectUsedByModel{
-		TotalSubjects: types.Int64Value(project.UsedBy.TotalSubjects),
-		Subjects:      mapSubjectsToModel(project.UsedBy.Subjects),
+		TotalSubjects: types.Int64Value(int64(project.GetUsedBy().GetTotalSubjects())),
+		Subjects:      mapSubjectsToModel(project.GetUsedBy().GetSubjects()),
 	})
 	diags.Append(usedByDiags...)
 	if diags.HasError() {
@@ -759,32 +786,39 @@ func mapProjectToModel(ctx context.Context, project gitpod.Project, prior projec
 	return state, diags
 }
 
-func mapProjectInitializerToModel(initializer gitpod.EnvironmentInitializer, prior *projectInitializerModel) *projectInitializerModel {
-	if len(initializer.Specs) == 0 {
+func mapProjectInitializerToModel(initializer *v1.EnvironmentInitializer, prior *projectInitializerModel) *projectInitializerModel {
+	if len(initializer.GetSpecs()) == 0 {
 		return prior
 	}
 
-	specs := make([]projectInitializerSpecModel, 0, len(initializer.Specs))
-	for idx, spec := range initializer.Specs {
+	specs := make([]projectInitializerSpecModel, 0, len(initializer.GetSpecs()))
+	for idx, spec := range initializer.GetSpecs() {
 		var priorSpec *projectInitializerSpecModel
 		if prior != nil && idx < len(prior.Specs) {
 			priorSpec = &prior.Specs[idx]
 		}
 
+		// spec is a oneof, so prior values may only fill in gaps within the
+		// variant the API returned. Carrying the other variant over would write
+		// a both-set state that buildEnvironmentInitializerParam rejects.
 		modelSpec := projectInitializerSpecModel{}
-		if hasInitializerContextURL(spec.ContextURL) || (priorSpec != nil && priorSpec.ContextURL != nil) {
+		switch {
+		case spec.GetContextUrl() != nil:
 			modelSpec.ContextURL = &projectInitializerContextURLModel{
-				URL: mergeStringWithPrior(spec.ContextURL.URL, priorContextURLValue(priorSpec)),
+				URL: mergeStringWithPrior(spec.GetContextUrl().GetUrl(), priorContextURLValue(priorSpec)),
 			}
-		}
-		if hasInitializerGit(spec.Git) || (priorSpec != nil && priorSpec.Git != nil) {
+		case spec.GetGit() != nil:
+			git := spec.GetGit()
 			modelSpec.Git = &projectInitializerGitModel{
-				CheckoutLocation:  mergeStringWithPrior(spec.Git.CheckoutLocation, priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.CheckoutLocation })),
-				CloneTarget:       mergeStringWithPrior(spec.Git.CloneTarget, priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.CloneTarget })),
-				RemoteURI:         mergeStringWithPrior(spec.Git.RemoteUri, priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.RemoteURI })),
-				TargetMode:        mergeStringWithPrior(string(spec.Git.TargetMode), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.TargetMode })),
-				UpstreamRemoteURI: mergeStringWithPrior(spec.Git.UpstreamRemoteUri, priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.UpstreamRemoteURI })),
+				CheckoutLocation:  mergeStringWithPrior(git.GetCheckoutLocation(), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.CheckoutLocation })),
+				CloneTarget:       mergeStringWithPrior(git.GetCloneTarget(), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.CloneTarget })),
+				RemoteURI:         mergeStringWithPrior(git.GetRemoteUri(), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.RemoteURI })),
+				TargetMode:        mergeStringWithPrior(enumString(git.GetTargetMode()), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.TargetMode })),
+				UpstreamRemoteURI: mergeStringWithPrior(git.GetUpstreamRemoteUri(), priorGitValue(priorSpec, func(g *projectInitializerGitModel) types.String { return g.UpstreamRemoteURI })),
 			}
+		case priorSpec != nil:
+			// The API returned neither variant; keep what state already had.
+			modelSpec = *priorSpec
 		}
 
 		specs = append(specs, modelSpec)
@@ -793,73 +827,87 @@ func mapProjectInitializerToModel(initializer gitpod.EnvironmentInitializer, pri
 	return &projectInitializerModel{Specs: specs}
 }
 
-func mapProjectPrebuildConfigurationToModel(cfg gitpod.ProjectPrebuildConfiguration, prior *projectPrebuildConfigurationModel) *projectPrebuildConfigurationModel {
-	if cfg.JSON.RawJSON() == "" {
+func mapProjectPrebuildConfigurationToModel(cfg *v1.ProjectPrebuildConfiguration, prior *projectPrebuildConfigurationModel) *projectPrebuildConfigurationModel {
+	if cfg == nil {
 		return knownProjectPrebuildConfiguration(prior)
 	}
 
 	prior = knownProjectPrebuildConfiguration(prior)
 
 	model := &projectPrebuildConfigurationModel{
-		Enabled:               types.BoolNull(),
-		EnableJetbrainsWarmup: types.BoolNull(),
+		// enabled and enable_jetbrains_warmup are plain proto3 bools, which carry
+		// no presence: an omitted field is indistinguishable from false, so the
+		// wire value is authoritative and there is nothing to fall back to.
+		Enabled:               types.BoolValue(cfg.GetEnabled()),
+		EnableJetbrainsWarmup: types.BoolValue(cfg.GetEnableJetbrainsWarmup()),
 		EnvironmentClassIDs:   types.ListNull(types.StringType),
 		Timeout:               types.StringNull(),
 	}
 
-	if !cfg.JSON.Enabled.IsMissing() {
-		model.Enabled = types.BoolValue(cfg.Enabled)
-	} else if prior != nil {
-		model.Enabled = prior.Enabled
-	}
-
-	if !cfg.JSON.EnableJetbrainsWarmup.IsMissing() {
-		model.EnableJetbrainsWarmup = types.BoolValue(cfg.EnableJetbrainsWarmup)
-	} else if prior != nil {
-		model.EnableJetbrainsWarmup = prior.EnableJetbrainsWarmup
-	}
-
-	if !cfg.JSON.EnvironmentClassIDs.IsMissing() {
-		model.EnvironmentClassIDs = stringListValue(cfg.EnvironmentClassIDs)
+	if cfg.GetEnvironmentClassIds() != nil {
+		model.EnvironmentClassIDs = stringListValue(cfg.GetEnvironmentClassIds())
 	} else if prior != nil {
 		model.EnvironmentClassIDs = prior.EnvironmentClassIDs
 	}
 
-	if !cfg.JSON.Executor.IsMissing() {
-		model.Executor = mapSubjectToModel(cfg.Executor, nil)
+	if cfg.GetExecutor() != nil {
+		model.Executor = mapSubjectToModel(cfg.GetExecutor(), nil)
 	} else if prior != nil {
 		model.Executor = prior.Executor
 	}
 
-	if !cfg.JSON.Timeout.IsMissing() {
-		model.Timeout = stringValueOrNull(cfg.Timeout)
+	if cfg.GetTimeout() != nil {
+		model.Timeout = timeoutValueWithPrior(cfg.GetTimeout(), priorTimeout(prior))
 	} else if prior != nil {
 		model.Timeout = prior.Timeout
 	}
 
-	model.Trigger = mapProjectPrebuildTriggerToModel(cfg.Trigger, !cfg.JSON.Trigger.IsMissing(), priorProjectPrebuildTrigger(prior))
+	model.Trigger = mapProjectPrebuildTriggerToModel(cfg.GetTrigger(), priorProjectPrebuildTrigger(prior))
 
 	return model
 }
 
-func mapProjectPrebuildTriggerToModel(trigger gitpod.ProjectPrebuildConfigurationTrigger, present bool, prior *projectPrebuildTriggerModel) *projectPrebuildTriggerModel {
-	if !present {
+func mapProjectPrebuildTriggerToModel(trigger *v1.PrebuildTrigger, prior *projectPrebuildTriggerModel) *projectPrebuildTriggerModel {
+	if trigger == nil {
 		return prior
 	}
 
 	return &projectPrebuildTriggerModel{
-		DailySchedule: mapProjectPrebuildDailyScheduleToModel(trigger.DailySchedule, priorProjectPrebuildDailySchedule(prior)),
+		DailySchedule: mapProjectPrebuildDailyScheduleToModel(trigger.GetDailySchedule(), priorProjectPrebuildDailySchedule(prior)),
 	}
 }
 
-func mapProjectPrebuildDailyScheduleToModel(schedule gitpod.ProjectPrebuildConfigurationTriggerDailySchedule, prior *projectPrebuildDailyScheduleModel) *projectPrebuildDailyScheduleModel {
-	if !schedule.JSON.HourUtc.IsMissing() {
-		return &projectPrebuildDailyScheduleModel{
-			HourUTC: types.Int64Value(schedule.HourUtc),
+func mapProjectPrebuildDailyScheduleToModel(schedule *v1.PrebuildTrigger_DailySchedule, prior *projectPrebuildDailyScheduleModel) *projectPrebuildDailyScheduleModel {
+	if schedule == nil {
+		return prior
+	}
+
+	return &projectPrebuildDailyScheduleModel{
+		HourUTC: types.Int64Value(int64(schedule.GetHourUtc())),
+	}
+}
+
+// timeoutValueWithPrior keeps the configured spelling of a prebuild timeout
+// when it denotes the same duration the API returned. timeout is
+// optional-and-computed, so echoing a re-spelled but equivalent value (for
+// example "3600s" for a configured "1h") would fail Terraform's
+// consistent-result check.
+func timeoutValueWithPrior(timeout *durationpb.Duration, prior types.String) types.String {
+	if !prior.IsNull() && !prior.IsUnknown() {
+		if configured, err := time.ParseDuration(prior.ValueString()); err == nil && configured == timeout.AsDuration() {
+			return prior
 		}
 	}
 
-	return prior
+	return stringValueOrNull(durationString(timeout))
+}
+
+func priorTimeout(prior *projectPrebuildConfigurationModel) types.String {
+	if prior == nil {
+		return types.StringNull()
+	}
+
+	return prior.Timeout
 }
 
 func priorProjectPrebuildTrigger(prior *projectPrebuildConfigurationModel) *projectPrebuildTriggerModel {
@@ -953,53 +1001,42 @@ func knownStringListOrNull(prior types.List) types.List {
 	return prior
 }
 
-func mapRecommendedEditorsToModel(editors gitpod.RecommendedEditors, prior map[string]projectRecommendedEditor) map[string]projectRecommendedEditor {
-	if editors.Editors == nil {
+func mapRecommendedEditorsToModel(editors *v1.RecommendedEditors, prior map[string]projectRecommendedEditor) map[string]projectRecommendedEditor {
+	if editors.GetEditors() == nil {
 		return prior
 	}
 
-	result := make(map[string]projectRecommendedEditor, len(editors.Editors))
-	for alias, editor := range editors.Editors {
+	result := make(map[string]projectRecommendedEditor, len(editors.GetEditors()))
+	for alias, editor := range editors.GetEditors() {
 		result[alias] = projectRecommendedEditor{
-			Versions: stringListValue(editor.Versions),
+			Versions: stringListValue(editor.GetVersions()),
 		}
 	}
 
 	return result
 }
 
-func mapSubjectToModel(subject shared.Subject, prior *projectSubjectModel) *projectSubjectModel {
-	if subject.ID == "" && subject.Principal == "" && prior != nil {
+func mapSubjectToModel(subject *v1.Subject, prior *projectSubjectModel) *projectSubjectModel {
+	principal := enumString(subject.GetPrincipal())
+	if subject.GetId() == "" && principal == "" && prior != nil {
 		return prior
 	}
 
 	return &projectSubjectModel{
-		ID:        mergeStringWithPrior(subject.ID, priorSubjectValue(prior, func(s *projectSubjectModel) types.String { return s.ID })),
-		Principal: mergeStringWithPrior(string(subject.Principal), priorSubjectValue(prior, func(s *projectSubjectModel) types.String { return s.Principal })),
+		ID:        mergeStringWithPrior(subject.GetId(), priorSubjectValue(prior, func(s *projectSubjectModel) types.String { return s.ID })),
+		Principal: mergeStringWithPrior(principal, priorSubjectValue(prior, func(s *projectSubjectModel) types.String { return s.Principal })),
 	}
 }
 
-func mapSubjectsToModel(subjects []shared.Subject) []projectSubjectModel {
+func mapSubjectsToModel(subjects []*v1.Subject) []projectSubjectModel {
 	result := make([]projectSubjectModel, 0, len(subjects))
 	for _, subject := range subjects {
 		result = append(result, projectSubjectModel{
-			ID:        stringValueOrNull(subject.ID),
-			Principal: stringValueOrNull(string(subject.Principal)),
+			ID:        stringValueOrNull(subject.GetId()),
+			Principal: stringValueOrNull(enumString(subject.GetPrincipal())),
 		})
 	}
 	return result
-}
-
-func hasInitializerContextURL(contextURL gitpod.EnvironmentInitializerSpecsContextURL) bool {
-	return contextURL.URL != ""
-}
-
-func hasInitializerGit(git gitpod.EnvironmentInitializerSpecsGit) bool {
-	return git.CheckoutLocation != "" ||
-		git.CloneTarget != "" ||
-		git.RemoteUri != "" ||
-		git.TargetMode != "" ||
-		git.UpstreamRemoteUri != ""
 }
 
 func projectPrebuildConfigurationModelFromObject(ctx context.Context, value types.Object) (*projectPrebuildConfigurationModel, diag.Diagnostics) {
