@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sort"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -17,7 +18,7 @@ import (
 var _ datasource.DataSource = &runnerEnvironmentClassesDataSource{}
 
 type runnerEnvironmentClassesDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerEnvironmentClassesDataSource() datasource.DataSource {
@@ -91,9 +92,9 @@ func (d *runnerEnvironmentClassesDataSource) Read(ctx context.Context, req datas
 
 	runnerID := config.RunnerID.ValueString()
 
-	_, err := d.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(runnerID),
-	})
+	_, err := d.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+		RunnerId: runnerID,
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Runner not found",
@@ -105,20 +106,19 @@ func (d *runnerEnvironmentClassesDataSource) Read(ctx context.Context, req datas
 		return
 	}
 
-	iter := d.client.Runners.Configurations.EnvironmentClasses.ListAutoPaging(ctx, gitpod.RunnerConfigurationEnvironmentClassListParams{
-		Filter: gitpod.F(gitpod.RunnerConfigurationEnvironmentClassListParamsFilter{
-			RunnerIDs: gitpod.F([]string{runnerID}),
-		}),
-		Pagination: gitpod.F(gitpod.RunnerConfigurationEnvironmentClassListParamsPagination{
-			PageSize: gitpod.F(int64(100)),
-		}),
+	environmentClasses, err := collectPaged(func(token string) ([]*v1.EnvironmentClass, string, error) {
+		listResp, err := d.client.Services.RunnerConfiguration.ListEnvironmentClasses(ctx, connect.NewRequest(&v1.ListEnvironmentClassesRequest{
+			Filter: &v1.ListEnvironmentClassesRequest_Filter{
+				RunnerIds: []string{runnerID},
+			},
+			Pagination: &v1.PaginationRequest{PageSize: 100, Token: token},
+		}))
+		if err != nil {
+			return nil, "", err
+		}
+		return listResp.Msg.GetEnvironmentClasses(), listResp.Msg.GetPagination().GetNextToken(), nil
 	})
-
-	environmentClasses := make([]shared.EnvironmentClass, 0)
-	for iter.Next() {
-		environmentClasses = append(environmentClasses, iter.Current())
-	}
-	if err := iter.Err(); err != nil {
+	if err != nil {
 		resp.Diagnostics.AddError("Failed to list runner environment classes", err.Error())
 		return
 	}
@@ -132,9 +132,9 @@ func (d *runnerEnvironmentClassesDataSource) Read(ctx context.Context, req datas
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapRunnerEnvironmentClassesToDataSourceModel(runnerID string, environmentClasses []shared.EnvironmentClass) (runnerEnvironmentClassesDataSourceModel, diag.Diagnostics) {
+func mapRunnerEnvironmentClassesToDataSourceModel(runnerID string, environmentClasses []*v1.EnvironmentClass) (runnerEnvironmentClassesDataSourceModel, diag.Diagnostics) {
 	sort.Slice(environmentClasses, func(i, j int) bool {
-		return environmentClasses[i].ID < environmentClasses[j].ID
+		return environmentClasses[i].GetId() < environmentClasses[j].GetId()
 	})
 
 	state := runnerEnvironmentClassesDataSourceModel{
@@ -144,21 +144,21 @@ func mapRunnerEnvironmentClassesToDataSourceModel(runnerID string, environmentCl
 
 	var diags diag.Diagnostics
 	for _, environmentClass := range environmentClasses {
-		configurationValues := make(map[string]attr.Value, len(environmentClass.Configuration))
-		for _, field := range environmentClass.Configuration {
-			configurationValues[field.Key] = types.StringValue(field.Value)
+		configurationValues := make(map[string]attr.Value, len(environmentClass.GetConfiguration()))
+		for _, field := range environmentClass.GetConfiguration() {
+			configurationValues[field.GetKey()] = types.StringValue(field.GetValue())
 		}
 
 		configuration, configDiags := types.MapValue(types.StringType, configurationValues)
 		diags.Append(configDiags...)
 
 		state.EnvironmentClasses = append(state.EnvironmentClasses, runnerEnvironmentClassDataSourceModel{
-			ID:            types.StringValue(environmentClass.ID),
-			DisplayName:   stringValueOrNull(environmentClass.DisplayName),
-			Description:   stringValueOrNull(environmentClass.Description),
+			ID:            types.StringValue(environmentClass.GetId()),
+			DisplayName:   stringValueOrNull(environmentClass.GetDisplayName()),
+			Description:   stringValueOrNull(environmentClass.GetDescription()),
 			Configuration: configuration,
-			Enabled:       types.BoolValue(environmentClass.Enabled),
-			RunnerID:      types.StringValue(environmentClass.RunnerID),
+			Enabled:       types.BoolValue(environmentClass.GetEnabled()),
+			RunnerID:      types.StringValue(environmentClass.GetRunnerId()),
 		})
 	}
 

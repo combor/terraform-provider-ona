@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -13,7 +15,7 @@ import (
 var _ datasource.DataSource = &runnerDataSource{}
 
 type runnerDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerDataSource() datasource.DataSource {
@@ -133,9 +135,9 @@ func (d *runnerDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	getResp, err := d.client.Runners.Get(ctx, gitpod.RunnerGetParams{
-		RunnerID: gitpod.F(config.ID.ValueString()),
-	})
+	getResp, err := d.client.Services.Runner.GetRunner(ctx, connect.NewRequest(&v1.GetRunnerRequest{
+		RunnerId: config.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Runner not found",
@@ -146,46 +148,47 @@ func (d *runnerDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	runner := getResp.Runner
+	runner := getResp.Msg.GetRunner()
 	state := mapRunnerToDataSourceModel(runner)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapRunnerToDataSourceModel(runner gitpod.Runner) runnerDataSourceModel {
+func mapRunnerToDataSourceModel(runner *v1.Runner) runnerDataSourceModel {
 	m := runnerDataSourceModel{
-		ID:           types.StringValue(runner.RunnerID),
-		Name:         types.StringValue(runner.Name),
-		ProviderType: types.StringValue(string(runner.Provider)),
+		ID:           types.StringValue(runner.GetRunnerId()),
+		Name:         types.StringValue(runner.GetName()),
+		ProviderType: types.StringValue(enumString(runner.GetProvider())),
 	}
 
-	m.RunnerManagerID = stringValueOrNull(runner.RunnerManagerID)
+	m.RunnerManagerID = stringValueOrNull(runner.GetRunnerManagerId())
 
 	m.Spec = &runnerDataSourceSpecModel{
-		DesiredPhase:  stringValueOrNull(string(runner.Spec.DesiredPhase)),
-		Variant:       stringValueOrNull(string(runner.Spec.Variant)),
+		DesiredPhase:  stringValueOrNull(enumString(runner.GetSpec().GetDesiredPhase())),
+		Variant:       stringValueOrNull(enumString(runner.GetSpec().GetVariant())),
 		Configuration: mapRunnerConfigToDataSourceModel(runner),
 	}
 
-	m.Status = runnerStatusObjectValue(runner.Status)
+	m.Status = runnerStatusObjectValue(runner.GetStatus())
 
 	return m
 }
 
-func mapRunnerConfigToDataSourceModel(runner gitpod.Runner) *runnerDataSourceConfigModel {
+func mapRunnerConfigToDataSourceModel(runner *v1.Runner) *runnerDataSourceConfigModel {
+	configuration := runner.GetSpec().GetConfiguration()
 	cfg := &runnerDataSourceConfigModel{
-		AutoUpdate:                    types.BoolValue(runner.Spec.Configuration.AutoUpdate),
-		DevcontainerImageCacheEnabled: types.BoolValue(runner.Spec.Configuration.DevcontainerImageCacheEnabled),
-		Region:                        stringValueOrNull(runner.Spec.Configuration.Region),
-		ReleaseChannel:                stringValueOrNull(string(runner.Spec.Configuration.ReleaseChannel)),
-		LogLevel:                      stringValueOrNull(string(runner.Spec.Configuration.LogLevel)),
+		AutoUpdate:                    types.BoolValue(configuration.GetAutoUpdate()),
+		DevcontainerImageCacheEnabled: types.BoolValue(configuration.GetDevcontainerImageCacheEnabled()),
+		Region:                        stringValueOrNull(configuration.GetRegion()),
+		ReleaseChannel:                stringValueOrNull(enumString(configuration.GetReleaseChannel())),
+		LogLevel:                      stringValueOrNull(enumString(configuration.GetLogLevel())),
 		Metrics: &runnerDataSourceMetricsModel{
-			Enabled:               types.BoolValue(runner.Spec.Configuration.Metrics.Enabled),
-			ManagedMetricsEnabled: types.BoolValue(runner.Spec.Configuration.Metrics.ManagedMetricsEnabled),
-			URL:                   stringValueOrNull(runner.Spec.Configuration.Metrics.URL),
-			Username:              stringValueOrNull(runner.Spec.Configuration.Metrics.Username),
+			Enabled:               types.BoolValue(configuration.GetMetrics().GetEnabled()),
+			ManagedMetricsEnabled: types.BoolValue(configuration.GetMetrics().GetManagedMetricsEnabled()),
+			URL:                   stringValueOrNull(configuration.GetMetrics().GetUrl()),
+			Username:              stringValueOrNull(configuration.GetMetrics().GetUsername()),
 		},
 	}
-	if startHour, endHour, ok := mapUpdateWindowValues(runner.Spec.Configuration.UpdateWindow); ok {
+	if startHour, endHour, ok := mapUpdateWindowValues(configuration.GetUpdateWindow()); ok {
 		cfg.UpdateWindow = &runnerDataSourceUpdateWindowModel{
 			StartHour: startHour,
 			EndHour:   endHour,

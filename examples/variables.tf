@@ -8,7 +8,7 @@ variable "ona_api_key" {
 variable "ona_base_url" {
   description = "Ona API base URL."
   type        = string
-  default     = "https://app.gitpod.io/api"
+  default     = "https://app.ona.com/api"
 }
 
 variable "runner_name" {

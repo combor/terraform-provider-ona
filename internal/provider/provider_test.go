@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"math"
+	"net/http"
 	"os"
 	"testing"
 
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	frameworkprovider "github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
@@ -55,4 +57,30 @@ func TestInt64ToIntChecked(t *testing.T) {
 func TestMaxRuntimeInt64(t *testing.T) {
 	assert.Greater(t, maxRuntimeInt64(), int64(0))
 	assert.LessOrEqual(t, maxRuntimeInt64(), int64(math.MaxInt64))
+}
+
+// newSDKClient has to set ONA_API_KEY because sdk.NewFromEnv is the only usable
+// constructor. It must leave the process environment exactly as it found it.
+func TestNewSDKClient_RestoresAPIKeyEnvVar(t *testing.T) {
+	t.Run("restores a pre-existing value", func(t *testing.T) {
+		t.Setenv(sdk.APIKeyEnvVar, "pre-existing")
+
+		client, err := newSDKClient("configured-key", defaultBaseURL, http.DefaultClient)
+		require.NoError(t, err)
+		require.NotNil(t, client)
+
+		assert.Equal(t, "pre-existing", os.Getenv(sdk.APIKeyEnvVar))
+	})
+
+	t.Run("unsets when it was not previously set", func(t *testing.T) {
+		t.Setenv(sdk.APIKeyEnvVar, "")
+		require.NoError(t, os.Unsetenv(sdk.APIKeyEnvVar))
+
+		client, err := newSDKClient("configured-key", defaultBaseURL, http.DefaultClient)
+		require.NoError(t, err)
+		require.NotNil(t, client)
+
+		_, present := os.LookupEnv(sdk.APIKeyEnvVar)
+		assert.False(t, present)
+	})
 }

@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -12,9 +14,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/option"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 )
+
+const defaultBaseURL = "https://app.ona.com/api"
+
+// apiKeyEnvMu serialises the os.Setenv/sdk.NewFromEnv/restore sequence in
+// Configure. sdk.NewFromEnv is the only usable constructor — sdk.New takes an
+// internal type — and it reads the API key from the process environment, which
+// aliased provider instances could otherwise race on.
+var apiKeyEnvMu sync.Mutex
 
 var _ provider.Provider = &onaProvider{}
 
@@ -57,11 +66,11 @@ func (p *onaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 			},
 			"base_url": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "API base URL. Falls back to `GITPOD_BASE_URL` env var. Defaults to `https://app.gitpod.io/api`.",
+				MarkdownDescription: "API base URL. Falls back to `GITPOD_BASE_URL` env var. Defaults to `https://app.ona.com/api`.",
 			},
 			"max_retries": schema.Int64Attribute{
 				Optional:            true,
-				MarkdownDescription: "Maximum number of retries per request. Defaults to the SDK default (2). Set to `0` to disable retries.",
+				MarkdownDescription: "Maximum number of retries per request. Defaults to `2`. Set to `0` to disable retries.",
 			},
 			"request_timeout": schema.StringAttribute{
 				Optional:            true,
@@ -92,13 +101,10 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 		baseURL = os.Getenv("GITPOD_BASE_URL")
 	}
 	if baseURL == "" {
-		baseURL = "https://app.gitpod.io/api"
+		baseURL = defaultBaseURL
 	}
 
-	clientOptions := []option.RequestOption{
-		option.WithBearerToken(apiKey),
-		option.WithBaseURL(baseURL),
-	}
+	maxRetries := defaultMaxRetries
 
 	if !config.MaxRetries.IsNull() {
 		if config.MaxRetries.IsUnknown() {
@@ -109,8 +115,8 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		maxRetries := config.MaxRetries.ValueInt64()
-		if maxRetries < 0 {
+		configured := config.MaxRetries.ValueInt64()
+		if configured < 0 {
 			resp.Diagnostics.AddError(
 				"Invalid max_retries",
 				"Provider attribute max_retries must be greater than or equal to 0.",
@@ -118,7 +124,7 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		maxRetriesOption, err := int64ToIntChecked(maxRetries, maxRuntimeInt64())
+		checked, err := int64ToIntChecked(configured, maxRuntimeInt64())
 		if err != nil {
 			resp.Diagnostics.AddError(
 				"Invalid max_retries",
@@ -127,8 +133,10 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		clientOptions = append(clientOptions, option.WithMaxRetries(maxRetriesOption))
+		maxRetries = checked
 	}
+
+	transport := &retryTransport{base: http.DefaultTransport, maxRetries: maxRetries}
 
 	if !config.RequestTimeout.IsNull() {
 		if config.RequestTimeout.IsUnknown() {
@@ -155,13 +163,41 @@ func (p *onaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 			return
 		}
 
-		clientOptions = append(clientOptions, option.WithRequestTimeout(requestTimeout))
+		// Applied per attempt inside the transport rather than as
+		// http.Client.Timeout, which would span every retry and backoff sleep.
+		transport.perAttemptTimeout = requestTimeout
 	}
 
-	client := gitpod.NewClient(clientOptions...)
+	client, err := newSDKClient(apiKey, baseURL, &http.Client{Transport: transport})
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to create API client", err.Error())
+		return
+	}
 
 	resp.ResourceData = client
 	resp.DataSourceData = client
+}
+
+// newSDKClient builds the SDK client from an explicit API key. sdk.NewFromEnv
+// reads the key from the environment and captures it eagerly in a static token
+// source, so the previous value can be restored as soon as it returns.
+func newSDKClient(apiKey, baseURL string, httpClient *http.Client) (*sdk.Client, error) {
+	apiKeyEnvMu.Lock()
+	defer apiKeyEnvMu.Unlock()
+
+	previous, existed := os.LookupEnv(sdk.APIKeyEnvVar)
+	if err := os.Setenv(sdk.APIKeyEnvVar, apiKey); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if existed {
+			_ = os.Setenv(sdk.APIKeyEnvVar, previous)
+			return
+		}
+		_ = os.Unsetenv(sdk.APIKeyEnvVar)
+	}()
+
+	return sdk.NewFromEnv(sdk.WithBaseURL(baseURL), sdk.WithHTTPClient(httpClient))
 }
 
 func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {

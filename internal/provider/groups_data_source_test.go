@@ -4,35 +4,36 @@ import (
 	"testing"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMapGroupsToDataSourceModel_MapsAndSortsGroups(t *testing.T) {
-	got := mapGroupsToDataSourceModel([]gitpod.Group{
+	got := mapGroupsToDataSourceModel([]*v1.Group{
 		{
-			ID:             "group-b",
+			Id:             "group-b",
 			Name:           "Backend",
 			Description:    "Backend team",
-			OrganizationID: "org-1",
+			OrganizationId: "org-1",
 			MemberCount:    3,
 			DirectShare:    false,
 			SystemManaged:  false,
-			CreatedAt:      time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
-			UpdatedAt:      time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
+			CreatedAt:      timestamppb.New(time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)),
+			UpdatedAt:      timestamppb.New(time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)),
 		},
 		{
-			ID:             "group-a",
+			Id:             "group-a",
 			Name:           "Frontend",
 			Description:    "Frontend team",
-			OrganizationID: "org-1",
+			OrganizationId: "org-1",
 			MemberCount:    5,
 			DirectShare:    true,
 			SystemManaged:  true,
-			CreatedAt:      time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC),
-			UpdatedAt:      time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC),
+			CreatedAt:      timestamppb.New(time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)),
+			UpdatedAt:      timestamppb.New(time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC)),
 		},
 	})
 
@@ -53,14 +54,14 @@ func TestMapGroupsToDataSourceModel_MapsAndSortsGroups(t *testing.T) {
 }
 
 func TestMapGroupsToDataSourceModel_EmptyList(t *testing.T) {
-	got := mapGroupsToDataSourceModel([]gitpod.Group{})
+	got := mapGroupsToDataSourceModel([]*v1.Group{})
 	assert.Empty(t, got.Groups)
 }
 
 func TestMapGroupsToDataSourceModel_EmptyOptionalFields(t *testing.T) {
-	got := mapGroupsToDataSourceModel([]gitpod.Group{
+	got := mapGroupsToDataSourceModel([]*v1.Group{
 		{
-			ID: "group-1",
+			Id: "group-1",
 		},
 	})
 
@@ -74,7 +75,7 @@ func TestMapGroupsToDataSourceModel_EmptyOptionalFields(t *testing.T) {
 }
 
 func TestMatchesGroupFilters_NoFilters(t *testing.T) {
-	assert.True(t, matchesGroupFilters(gitpod.Group{Name: "anything"}, nil))
+	assert.True(t, matchesGroupFilters(&v1.Group{Name: "anything"}, nil))
 }
 
 func TestMatchesGroupFilters_NameMatch(t *testing.T) {
@@ -85,9 +86,9 @@ func TestMatchesGroupFilters_NameMatch(t *testing.T) {
 		},
 	}
 
-	assert.True(t, matchesGroupFilters(gitpod.Group{Name: "Engineering"}, filters))
-	assert.True(t, matchesGroupFilters(gitpod.Group{Name: "Backend"}, filters))
-	assert.False(t, matchesGroupFilters(gitpod.Group{Name: "Frontend"}, filters))
+	assert.True(t, matchesGroupFilters(&v1.Group{Name: "Engineering"}, filters))
+	assert.True(t, matchesGroupFilters(&v1.Group{Name: "Backend"}, filters))
+	assert.False(t, matchesGroupFilters(&v1.Group{Name: "Frontend"}, filters))
 }
 
 func TestMatchesGroupFilters_UnsupportedFilter(t *testing.T) {
@@ -98,5 +99,5 @@ func TestMatchesGroupFilters_UnsupportedFilter(t *testing.T) {
 		},
 	}
 
-	assert.False(t, matchesGroupFilters(gitpod.Group{Name: "anything"}, filters))
+	assert.False(t, matchesGroupFilters(&v1.Group{Name: "anything"}, filters))
 }

@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -11,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -19,7 +22,7 @@ var (
 )
 
 type runnerScmIntegrationResource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerScmIntegrationResource() resource.Resource {
@@ -116,44 +119,44 @@ func (r *runnerScmIntegrationResource) Create(ctx context.Context, req resource.
 		return
 	}
 
-	params := gitpod.RunnerConfigurationScmIntegrationNewParams{
-		RunnerID: gitpod.F(plan.RunnerID.ValueString()),
-		ScmID:    gitpod.F(plan.ScmID.ValueString()),
-		Host:     gitpod.F(plan.Host.ValueString()),
+	params := &v1.CreateSCMIntegrationRequest{
+		RunnerId: plan.RunnerID.ValueString(),
+		ScmId:    plan.ScmID.ValueString(),
+		Host:     plan.Host.ValueString(),
 	}
 
 	if !plan.OAuthClientID.IsNull() && !plan.OAuthClientID.IsUnknown() {
-		params.OAuthClientID = gitpod.F(plan.OAuthClientID.ValueString())
+		params.OauthClientId = plan.OAuthClientID.ValueStringPointer()
 	}
 	if !plan.OAuthPlaintextClientSecret.IsNull() && !plan.OAuthPlaintextClientSecret.IsUnknown() {
-		params.OAuthPlaintextClientSecret = gitpod.F(plan.OAuthPlaintextClientSecret.ValueString())
+		params.OauthPlaintextClientSecret = plan.OAuthPlaintextClientSecret.ValueStringPointer()
 	}
 	if !plan.Pat.IsNull() && !plan.Pat.IsUnknown() {
-		params.Pat = gitpod.F(plan.Pat.ValueBool())
+		params.Pat = plan.Pat.ValueBool()
 	}
 	if !plan.IssuerURL.IsNull() && !plan.IssuerURL.IsUnknown() {
-		params.IssuerURL = gitpod.F(plan.IssuerURL.ValueString())
+		params.IssuerUrl = plan.IssuerURL.ValueStringPointer()
 	}
 	if !plan.VirtualDirectory.IsNull() && !plan.VirtualDirectory.IsUnknown() {
-		params.VirtualDirectory = gitpod.F(plan.VirtualDirectory.ValueString())
+		params.VirtualDirectory = plan.VirtualDirectory.ValueStringPointer()
 	}
 
-	createResp, err := r.client.Runners.Configurations.ScmIntegrations.New(ctx, params)
+	createResp, err := r.client.Services.RunnerConfiguration.CreateSCMIntegration(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create SCM integration", err.Error())
 		return
 	}
 
 	// Create only returns ID; read back for full state.
-	getResp, err := r.client.Runners.Configurations.ScmIntegrations.Get(ctx, gitpod.RunnerConfigurationScmIntegrationGetParams{
-		ID: gitpod.F(createResp.ID),
-	})
+	getResp, err := r.client.Services.RunnerConfiguration.GetSCMIntegration(ctx, connect.NewRequest(&v1.GetSCMIntegrationRequest{
+		Id: createResp.Msg.GetId(),
+	}))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read SCM integration after create", err.Error())
 		return
 	}
 
-	state := mapScmIntegrationToModel(getResp.Integration, plan)
+	state := mapScmIntegrationToModel(getResp.Msg.GetIntegration(), plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -164,9 +167,9 @@ func (r *runnerScmIntegrationResource) Read(ctx context.Context, req resource.Re
 		return
 	}
 
-	getResp, err := r.client.Runners.Configurations.ScmIntegrations.Get(ctx, gitpod.RunnerConfigurationScmIntegrationGetParams{
-		ID: gitpod.F(state.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.RunnerConfiguration.GetSCMIntegration(ctx, connect.NewRequest(&v1.GetSCMIntegrationRequest{
+		Id: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -177,7 +180,7 @@ func (r *runnerScmIntegrationResource) Read(ctx context.Context, req resource.Re
 		return
 	}
 
-	newState := mapScmIntegrationToModel(getResp.Integration, state)
+	newState := mapScmIntegrationToModel(getResp.Msg.GetIntegration(), state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -196,49 +199,49 @@ func (r *runnerScmIntegrationResource) Update(ctx context.Context, req resource.
 
 	params := buildRunnerScmIntegrationUpdateParams(plan, prior)
 
-	_, err := r.client.Runners.Configurations.ScmIntegrations.Update(ctx, params)
+	_, err := r.client.Services.RunnerConfiguration.UpdateSCMIntegration(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update SCM integration", err.Error())
 		return
 	}
 
 	// Update returns empty; read back for updated state.
-	getResp, err := r.client.Runners.Configurations.ScmIntegrations.Get(ctx, gitpod.RunnerConfigurationScmIntegrationGetParams{
-		ID: gitpod.F(prior.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.RunnerConfiguration.GetSCMIntegration(ctx, connect.NewRequest(&v1.GetSCMIntegrationRequest{
+		Id: prior.ID.ValueString(),
+	}))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read SCM integration after update", err.Error())
 		return
 	}
 
-	state := mapScmIntegrationToModel(getResp.Integration, plan)
+	state := mapScmIntegrationToModel(getResp.Msg.GetIntegration(), plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func buildRunnerScmIntegrationUpdateParams(plan, prior runnerScmIntegrationModel) gitpod.RunnerConfigurationScmIntegrationUpdateParams {
-	params := gitpod.RunnerConfigurationScmIntegrationUpdateParams{
-		ID: gitpod.F(prior.ID.ValueString()),
+func buildRunnerScmIntegrationUpdateParams(plan, prior runnerScmIntegrationModel) *v1.UpdateSCMIntegrationRequest {
+	params := &v1.UpdateSCMIntegrationRequest{
+		Id: prior.ID.ValueString(),
 	}
 
 	if !plan.OAuthClientID.IsNull() && !plan.OAuthClientID.IsUnknown() {
-		params.OAuthClientID = gitpod.F(plan.OAuthClientID.ValueString())
+		params.OauthClientId = plan.OAuthClientID.ValueStringPointer()
 	} else if plan.OAuthClientID.IsNull() && !prior.OAuthClientID.IsNull() && !prior.OAuthClientID.IsUnknown() {
 		// Send empty string to clear OAuth config per SDK docs.
-		params.OAuthClientID = gitpod.F("")
+		params.OauthClientId = proto.String("")
 	}
 	if !plan.OAuthPlaintextClientSecret.IsNull() && !plan.OAuthPlaintextClientSecret.IsUnknown() {
-		params.OAuthPlaintextClientSecret = gitpod.F(plan.OAuthPlaintextClientSecret.ValueString())
+		params.OauthPlaintextClientSecret = plan.OAuthPlaintextClientSecret.ValueStringPointer()
 	} else if plan.OAuthPlaintextClientSecret.IsNull() && !prior.OAuthPlaintextClientSecret.IsNull() && !prior.OAuthPlaintextClientSecret.IsUnknown() {
-		params.OAuthPlaintextClientSecret = gitpod.F("")
+		params.OauthPlaintextClientSecret = proto.String("")
 	}
 	if !plan.Pat.IsNull() && !plan.Pat.IsUnknown() {
-		params.Pat = gitpod.F(plan.Pat.ValueBool())
+		params.Pat = plan.Pat.ValueBoolPointer()
 	}
 	if !plan.IssuerURL.IsNull() && !plan.IssuerURL.IsUnknown() {
-		params.IssuerURL = gitpod.F(plan.IssuerURL.ValueString())
+		params.IssuerUrl = plan.IssuerURL.ValueStringPointer()
 	}
 	if !plan.VirtualDirectory.IsNull() && !plan.VirtualDirectory.IsUnknown() {
-		params.VirtualDirectory = gitpod.F(plan.VirtualDirectory.ValueString())
+		params.VirtualDirectory = plan.VirtualDirectory.ValueStringPointer()
 	}
 
 	return params
@@ -251,9 +254,9 @@ func (r *runnerScmIntegrationResource) Delete(ctx context.Context, req resource.
 		return
 	}
 
-	_, err := r.client.Runners.Configurations.ScmIntegrations.Delete(ctx, gitpod.RunnerConfigurationScmIntegrationDeleteParams{
-		ID: gitpod.F(state.ID.ValueString()),
-	})
+	_, err := r.client.Services.RunnerConfiguration.DeleteSCMIntegration(ctx, connect.NewRequest(&v1.DeleteSCMIntegrationRequest{
+		Id: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			return
@@ -267,16 +270,16 @@ func (r *runnerScmIntegrationResource) ImportState(ctx context.Context, req reso
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func mapScmIntegrationToModel(integration gitpod.ScmIntegration, prior runnerScmIntegrationModel) runnerScmIntegrationModel {
+func mapScmIntegrationToModel(integration *v1.SCMIntegration, prior runnerScmIntegrationModel) runnerScmIntegrationModel {
 	return runnerScmIntegrationModel{
-		ID:               types.StringValue(integration.ID),
-		RunnerID:         stringValueOrNull(integration.RunnerID),
-		ScmID:            stringValueOrNull(integration.ScmID),
-		Host:             stringValueOrNull(integration.Host),
-		OAuthClientID:    stringValueOrPriorExplicitEmpty(integration.OAuth.ClientID, prior.OAuthClientID),
-		Pat:              types.BoolValue(integration.Pat),
-		IssuerURL:        stringValueOrNull(integration.OAuth.IssuerURL),
-		VirtualDirectory: stringValueOrNull(integration.VirtualDirectory),
+		ID:               types.StringValue(integration.GetId()),
+		RunnerID:         stringValueOrNull(integration.GetRunnerId()),
+		ScmID:            stringValueOrNull(integration.GetScmId()),
+		Host:             stringValueOrNull(integration.GetHost()),
+		OAuthClientID:    stringValueOrPriorExplicitEmpty(integration.GetOauth().GetClientId(), prior.OAuthClientID),
+		Pat:              types.BoolValue(integration.GetPat()),
+		IssuerURL:        stringValueOrNull(integration.GetOauth().GetIssuerUrl()),
+		VirtualDirectory: stringValueOrNull(integration.GetVirtualDirectory()),
 		// Preserve from prior state — API doesn't return plaintext secret
 		OAuthPlaintextClientSecret: prior.OAuthPlaintextClientSecret,
 	}

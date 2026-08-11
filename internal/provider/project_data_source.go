@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -14,7 +16,7 @@ import (
 var _ datasource.DataSource = &projectDataSource{}
 
 type projectDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewProjectDataSource() datasource.DataSource {
@@ -51,7 +53,7 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				Attributes: map[string]schema.Attribute{
 					"specs": schema.ListNestedAttribute{
 						Computed:            true,
-						MarkdownDescription: "Initializer specs. Each entry may define `context_url`, `git`, or both.",
+						MarkdownDescription: "Initializer specs. Each entry defines exactly one of `context_url` or `git`.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"context_url": schema.SingleNestedAttribute{
@@ -240,9 +242,9 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	getResp, err := d.client.Projects.Get(ctx, gitpod.ProjectGetParams{
-		ProjectID: gitpod.F(config.ID.ValueString()),
-	})
+	getResp, err := d.client.Services.Project.GetProject(ctx, connect.NewRequest(&v1.GetProjectRequest{
+		ProjectId: config.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Project not found",
@@ -254,7 +256,7 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	state, diags := mapProjectToDataSourceModel(ctx, getResp.Project)
+	state, diags := mapProjectToDataSourceModel(ctx, getResp.Msg.GetProject())
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -263,6 +265,6 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func mapProjectToDataSourceModel(ctx context.Context, project gitpod.Project) (projectModel, diag.Diagnostics) {
+func mapProjectToDataSourceModel(ctx context.Context, project *v1.Project) (projectModel, diag.Diagnostics) {
 	return mapProjectToModel(ctx, project, projectModel{})
 }

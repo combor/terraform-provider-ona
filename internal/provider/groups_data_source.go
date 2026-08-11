@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -14,7 +16,7 @@ import (
 var _ datasource.DataSource = &groupsDataSource{}
 
 type groupsDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewGroupsDataSource() datasource.DataSource {
@@ -119,20 +121,23 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		}
 	}
 
-	iter := d.client.Groups.ListAutoPaging(ctx, gitpod.GroupListParams{
-		Pagination: gitpod.F(gitpod.GroupListParamsPagination{
-			PageSize: gitpod.F(int64(100)),
-		}),
-	})
-
-	groups := make([]gitpod.Group, 0)
-	for iter.Next() {
-		group := iter.Current()
-		if matchesGroupFilters(group, config.Filters) {
-			groups = append(groups, group)
+	groups, err := collectPaged(func(token string) ([]*v1.Group, string, error) {
+		listResp, err := d.client.Services.Group.ListGroups(ctx, connect.NewRequest(&v1.ListGroupsRequest{
+			Pagination: &v1.PaginationRequest{PageSize: 100, Token: token},
+		}))
+		if err != nil {
+			return nil, "", err
 		}
-	}
-	if err := iter.Err(); err != nil {
+
+		matching := make([]*v1.Group, 0, len(listResp.Msg.GetGroups()))
+		for _, group := range listResp.Msg.GetGroups() {
+			if matchesGroupFilters(group, config.Filters) {
+				matching = append(matching, group)
+			}
+		}
+		return matching, listResp.Msg.GetPagination().GetNextToken(), nil
+	})
+	if err != nil {
 		resp.Diagnostics.AddError("Failed to list groups", err.Error())
 		return
 	}
@@ -142,12 +147,12 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func matchesGroupFilters(group gitpod.Group, filters []groupsFilterModel) bool {
+func matchesGroupFilters(group *v1.Group, filters []groupsFilterModel) bool {
 	for _, f := range filters {
 		var fieldValue string
 		switch f.Name.ValueString() {
 		case "name":
-			fieldValue = group.Name
+			fieldValue = group.GetName()
 		default:
 			return false
 		}
@@ -166,9 +171,9 @@ func matchesGroupFilters(group gitpod.Group, filters []groupsFilterModel) bool {
 	return true
 }
 
-func mapGroupsToDataSourceModel(groups []gitpod.Group) groupsDataSourceModel {
+func mapGroupsToDataSourceModel(groups []*v1.Group) groupsDataSourceModel {
 	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].ID < groups[j].ID
+		return groups[i].GetId() < groups[j].GetId()
 	})
 
 	state := groupsDataSourceModel{
