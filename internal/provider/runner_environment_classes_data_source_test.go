@@ -3,34 +3,34 @@ package provider
 import (
 	"testing"
 
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMapRunnerEnvironmentClassesToDataSourceModel_MapsAndSortsClasses(t *testing.T) {
-	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []shared.EnvironmentClass{
+	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []*v1.EnvironmentClass{
 		{
-			ID:          "env-b",
+			Id:          "env-b",
 			DisplayName: "Regular",
 			Description: "4 vCPU / 16 GiB",
-			Configuration: []shared.FieldValue{
+			Configuration: []*v1.FieldValue{
 				{Key: "instanceType", Value: "m6i.xlarge"},
 				{Key: "vcpus", Value: "4"},
 			},
-			RunnerID: "runner-123",
+			RunnerId: "runner-123",
 			Enabled:  true,
 		},
 		{
-			ID:          "env-a",
+			Id:          "env-a",
 			DisplayName: "Small",
 			Description: "2 vCPU / 8 GiB",
-			Configuration: []shared.FieldValue{
+			Configuration: []*v1.FieldValue{
 				{Key: "instanceType", Value: "m6i.large"},
 				{Key: "vcpus", Value: "2"},
 			},
-			RunnerID: "runner-123",
+			RunnerId: "runner-123",
 			Enabled:  false,
 		},
 	})
@@ -58,17 +58,17 @@ func TestMapRunnerEnvironmentClassesToDataSourceModel_MapsAndSortsClasses(t *tes
 }
 
 func TestMapRunnerEnvironmentClassesToDataSourceModel_EmptyList(t *testing.T) {
-	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []shared.EnvironmentClass{})
+	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []*v1.EnvironmentClass{})
 	require.False(t, diags.HasError())
 	assert.Equal(t, "runner-123", got.RunnerID.ValueString())
 	assert.Empty(t, got.EnvironmentClasses)
 }
 
 func TestMapRunnerEnvironmentClassesToDataSourceModel_EmptyOptionalFields(t *testing.T) {
-	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []shared.EnvironmentClass{
+	got, diags := mapRunnerEnvironmentClassesToDataSourceModel("runner-123", []*v1.EnvironmentClass{
 		{
-			ID:       "env-1",
-			RunnerID: "runner-123",
+			Id:       "env-1",
+			RunnerId: "runner-123",
 			Enabled:  true,
 		},
 	})

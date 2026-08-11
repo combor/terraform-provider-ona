@@ -1,31 +1,31 @@
 package provider
 
 import (
-	"encoding/json"
 	"testing"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestMapRunnerToDataSourceModel_MapsAllFields(t *testing.T) {
-	var cfg gitpod.RunnerConfiguration
-	require.NoError(t, json.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"region":"us-east-1","releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true,"managedMetricsEnabled":true,"url":"https://metrics.example","username":"metrics-user"},"updateWindow":{"startHour":8,"endHour":12}}`), &cfg))
+	cfg := &v1.RunnerConfiguration{}
+	require.NoError(t, protojson.Unmarshal([]byte(`{"autoUpdate":true,"devcontainerImageCacheEnabled":true,"region":"us-east-1","releaseChannel":"RUNNER_RELEASE_CHANNEL_STABLE","logLevel":"LOG_LEVEL_INFO","metrics":{"enabled":true,"managedMetricsEnabled":true,"url":"https://metrics.example","username":"metrics-user"},"updateWindow":{"startHour":8,"endHour":12}}`), cfg))
 
-	runner := gitpod.Runner{
-		RunnerID:        "runner-123",
+	runner := &v1.Runner{
+		RunnerId:        "runner-123",
 		Name:            "Test Runner",
-		Provider:        gitpod.RunnerProviderAwsEc2,
-		RunnerManagerID: "mgr-456",
-		Spec: gitpod.RunnerSpec{
-			DesiredPhase:  gitpod.RunnerPhaseActive,
-			Variant:       gitpod.RunnerVariantStandard,
+		Provider:        v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2,
+		RunnerManagerId: "mgr-456",
+		Spec: &v1.RunnerSpec{
+			DesiredPhase:  v1.RunnerPhase_RUNNER_PHASE_ACTIVE,
+			Variant:       v1.RunnerVariant_RUNNER_VARIANT_STANDARD,
 			Configuration: cfg,
 		},
-		Status: gitpod.RunnerStatus{
-			Phase:   gitpod.RunnerPhaseDegraded,
+		Status: &v1.RunnerStatus{
+			Phase:   v1.RunnerPhase_RUNNER_PHASE_DEGRADED,
 			Message: "degraded",
 			Version: "1.2.3",
 			Region:  "eu-central-1",
@@ -36,19 +36,19 @@ func TestMapRunnerToDataSourceModel_MapsAllFields(t *testing.T) {
 
 	assert.Equal(t, "runner-123", got.ID.ValueString())
 	assert.Equal(t, "Test Runner", got.Name.ValueString())
-	assert.Equal(t, string(gitpod.RunnerProviderAwsEc2), got.ProviderType.ValueString())
+	assert.Equal(t, v1.RunnerProvider_RUNNER_PROVIDER_AWS_EC2.String(), got.ProviderType.ValueString())
 	assert.Equal(t, "mgr-456", got.RunnerManagerID.ValueString())
 
 	require.NotNil(t, got.Spec)
-	assert.Equal(t, string(gitpod.RunnerPhaseActive), got.Spec.DesiredPhase.ValueString())
-	assert.Equal(t, string(gitpod.RunnerVariantStandard), got.Spec.Variant.ValueString())
+	assert.Equal(t, v1.RunnerPhase_RUNNER_PHASE_ACTIVE.String(), got.Spec.DesiredPhase.ValueString())
+	assert.Equal(t, v1.RunnerVariant_RUNNER_VARIANT_STANDARD.String(), got.Spec.Variant.ValueString())
 
 	require.NotNil(t, got.Spec.Configuration)
 	assert.True(t, got.Spec.Configuration.AutoUpdate.ValueBool())
 	assert.True(t, got.Spec.Configuration.DevcontainerImageCacheEnabled.ValueBool())
 	assert.Equal(t, "us-east-1", got.Spec.Configuration.Region.ValueString())
-	assert.Equal(t, string(gitpod.RunnerReleaseChannelStable), got.Spec.Configuration.ReleaseChannel.ValueString())
-	assert.Equal(t, string(gitpod.LogLevelInfo), got.Spec.Configuration.LogLevel.ValueString())
+	assert.Equal(t, v1.RunnerReleaseChannel_RUNNER_RELEASE_CHANNEL_STABLE.String(), got.Spec.Configuration.ReleaseChannel.ValueString())
+	assert.Equal(t, v1.LogLevel_LOG_LEVEL_INFO.String(), got.Spec.Configuration.LogLevel.ValueString())
 
 	require.NotNil(t, got.Spec.Configuration.Metrics)
 	assert.True(t, got.Spec.Configuration.Metrics.Enabled.ValueBool())
@@ -63,7 +63,7 @@ func TestMapRunnerToDataSourceModel_MapsAllFields(t *testing.T) {
 	statusAttrs := got.Status.Attributes()
 	phase, ok := statusAttrs["phase"].(types.String)
 	require.True(t, ok)
-	assert.Equal(t, string(gitpod.RunnerPhaseDegraded), phase.ValueString())
+	assert.Equal(t, v1.RunnerPhase_RUNNER_PHASE_DEGRADED.String(), phase.ValueString())
 	message, ok := statusAttrs["message"].(types.String)
 	require.True(t, ok)
 	assert.Equal(t, "degraded", message.ValueString())
@@ -76,12 +76,12 @@ func TestMapRunnerToDataSourceModel_MapsAllFields(t *testing.T) {
 }
 
 func TestMapRunnerToDataSourceModel_NullOptionalFields(t *testing.T) {
-	runner := gitpod.Runner{
-		RunnerID: "runner-456",
+	runner := &v1.Runner{
+		RunnerId: "runner-456",
 		Name:     "Minimal Runner",
-		Provider: gitpod.RunnerProviderLinuxHost,
-		Spec: gitpod.RunnerSpec{
-			Configuration: gitpod.RunnerConfiguration{},
+		Provider: v1.RunnerProvider_RUNNER_PROVIDER_GCP,
+		Spec: &v1.RunnerSpec{
+			Configuration: &v1.RunnerConfiguration{},
 		},
 	}
 

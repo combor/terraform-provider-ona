@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -13,7 +15,7 @@ import (
 var _ datasource.DataSource = &runnerTokenDataSource{}
 
 type runnerTokenDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerTokenDataSource() datasource.DataSource {
@@ -61,9 +63,9 @@ func (d *runnerTokenDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	runnerID := config.RunnerID.ValueString()
 
-	token, err := d.client.Runners.NewRunnerToken(ctx, gitpod.RunnerNewRunnerTokenParams{
-		RunnerID: gitpod.F(runnerID),
-	})
+	token, err := d.client.Services.Runner.CreateRunnerToken(ctx, connect.NewRequest(&v1.CreateRunnerTokenRequest{
+		RunnerId: runnerID,
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.Diagnostics.AddError("Runner not found",
@@ -75,7 +77,7 @@ func (d *runnerTokenDataSource) Read(ctx context.Context, req datasource.ReadReq
 		return
 	}
 
-	state := mapRunnerTokenToDataSourceModel(runnerID, token.ExchangeToken)
+	state := mapRunnerTokenToDataSourceModel(runnerID, token.Msg.GetExchangeToken())
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -23,7 +25,7 @@ var (
 )
 
 type runnerEnvironmentClassResource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnerEnvironmentClassResource() resource.Resource {
@@ -126,17 +128,17 @@ func (r *runnerEnvironmentClassResource) Create(ctx context.Context, req resourc
 		return
 	}
 
-	params := gitpod.RunnerConfigurationEnvironmentClassNewParams{
-		RunnerID:      gitpod.F(plan.RunnerID.ValueString()),
-		DisplayName:   gitpod.F(plan.DisplayName.ValueString()),
-		Configuration: gitpod.F(buildConfigurationFieldValues(plan.Configuration)),
+	params := &v1.CreateEnvironmentClassRequest{
+		RunnerId:      plan.RunnerID.ValueString(),
+		DisplayName:   plan.DisplayName.ValueString(),
+		Configuration: buildConfigurationFieldValues(plan.Configuration),
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
-		params.Description = gitpod.F(plan.Description.ValueString())
+		params.Description = plan.Description.ValueString()
 	}
 
-	createResp, err := r.client.Runners.Configurations.EnvironmentClasses.New(ctx, params)
+	createResp, err := r.client.Services.RunnerConfiguration.CreateEnvironmentClass(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create environment class", err.Error())
 		return
@@ -145,16 +147,16 @@ func (r *runnerEnvironmentClassResource) Create(ctx context.Context, req resourc
 	// The class now exists. The API has no delete (Delete only disables), so
 	// Create must never return without persisting state or the class is
 	// permanently orphaned. fallback carries the ID if a follow-up call fails.
-	id := createResp.ID
+	id := createResp.Msg.GetId()
 	fallback := envClassPlanWithID(plan, id)
 
 	// The API ignores enabled during creation; apply the configured value with a
 	// follow-up Update whenever it is set (the create default is not relied on).
 	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() {
-		if _, err = r.client.Runners.Configurations.EnvironmentClasses.Update(ctx, gitpod.RunnerConfigurationEnvironmentClassUpdateParams{
-			EnvironmentClassID: gitpod.F(id),
-			Enabled:            gitpod.F(plan.Enabled.ValueBool()),
-		}); err != nil {
+		if _, err = r.client.Services.RunnerConfiguration.UpdateEnvironmentClass(ctx, connect.NewRequest(&v1.UpdateEnvironmentClassRequest{
+			EnvironmentClassId: id,
+			Enabled:            plan.Enabled.ValueBoolPointer(),
+		})); err != nil {
 			resp.Diagnostics.Append(resp.State.Set(ctx, &fallback)...)
 			resp.Diagnostics.AddError("Failed to set enabled state after create", err.Error())
 			return
@@ -164,10 +166,10 @@ func (r *runnerEnvironmentClassResource) Create(ctx context.Context, req resourc
 	// Create only returns the ID; read back for full state. If the read fails,
 	// fall back to the plan so the class is tracked; the next refresh reconciles
 	// computed fields.
-	if getResp, getErr := r.client.Runners.Configurations.EnvironmentClasses.Get(ctx, gitpod.RunnerConfigurationEnvironmentClassGetParams{
-		EnvironmentClassID: gitpod.F(id),
-	}); getErr == nil {
-		state := mapEnvironmentClassToModel(getResp.EnvironmentClass)
+	if getResp, getErr := r.client.Services.RunnerConfiguration.GetEnvironmentClass(ctx, connect.NewRequest(&v1.GetEnvironmentClassRequest{
+		EnvironmentClassId: id,
+	})); getErr == nil {
+		state := mapEnvironmentClassToModel(getResp.Msg.GetEnvironmentClass())
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	} else {
 		resp.Diagnostics.Append(resp.State.Set(ctx, &fallback)...)
@@ -182,9 +184,9 @@ func (r *runnerEnvironmentClassResource) Read(ctx context.Context, req resource.
 		return
 	}
 
-	getResp, err := r.client.Runners.Configurations.EnvironmentClasses.Get(ctx, gitpod.RunnerConfigurationEnvironmentClassGetParams{
-		EnvironmentClassID: gitpod.F(state.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.RunnerConfiguration.GetEnvironmentClass(ctx, connect.NewRequest(&v1.GetEnvironmentClassRequest{
+		EnvironmentClassId: state.ID.ValueString(),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -195,7 +197,7 @@ func (r *runnerEnvironmentClassResource) Read(ctx context.Context, req resource.
 		return
 	}
 
-	newState := mapEnvironmentClassToModel(getResp.EnvironmentClass)
+	newState := mapEnvironmentClassToModel(getResp.Msg.GetEnvironmentClass())
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
 
@@ -212,34 +214,34 @@ func (r *runnerEnvironmentClassResource) Update(ctx context.Context, req resourc
 		return
 	}
 
-	params := gitpod.RunnerConfigurationEnvironmentClassUpdateParams{
-		EnvironmentClassID: gitpod.F(prior.ID.ValueString()),
-		DisplayName:        gitpod.F(plan.DisplayName.ValueString()),
+	params := &v1.UpdateEnvironmentClassRequest{
+		EnvironmentClassId: prior.ID.ValueString(),
+		DisplayName:        plan.DisplayName.ValueStringPointer(),
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
-		params.Description = gitpod.F(plan.Description.ValueString())
+		params.Description = plan.Description.ValueStringPointer()
 	}
 	if !plan.Enabled.IsNull() && !plan.Enabled.IsUnknown() {
-		params.Enabled = gitpod.F(plan.Enabled.ValueBool())
+		params.Enabled = plan.Enabled.ValueBoolPointer()
 	}
 
-	_, err := r.client.Runners.Configurations.EnvironmentClasses.Update(ctx, params)
+	_, err := r.client.Services.RunnerConfiguration.UpdateEnvironmentClass(ctx, connect.NewRequest(params))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update environment class", err.Error())
 		return
 	}
 
 	// Update returns empty; read back for updated state.
-	getResp, err := r.client.Runners.Configurations.EnvironmentClasses.Get(ctx, gitpod.RunnerConfigurationEnvironmentClassGetParams{
-		EnvironmentClassID: gitpod.F(prior.ID.ValueString()),
-	})
+	getResp, err := r.client.Services.RunnerConfiguration.GetEnvironmentClass(ctx, connect.NewRequest(&v1.GetEnvironmentClassRequest{
+		EnvironmentClassId: prior.ID.ValueString(),
+	}))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read environment class after update", err.Error())
 		return
 	}
 
-	state := mapEnvironmentClassToModel(getResp.EnvironmentClass)
+	state := mapEnvironmentClassToModel(getResp.Msg.GetEnvironmentClass())
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -252,10 +254,10 @@ func (r *runnerEnvironmentClassResource) Delete(ctx context.Context, req resourc
 
 	// The API does not support deleting environment classes.
 	// Instead, disable the environment class to prevent it from being used.
-	_, err := r.client.Runners.Configurations.EnvironmentClasses.Update(ctx, gitpod.RunnerConfigurationEnvironmentClassUpdateParams{
-		EnvironmentClassID: gitpod.F(state.ID.ValueString()),
-		Enabled:            gitpod.F(false),
-	})
+	_, err := r.client.Services.RunnerConfiguration.UpdateEnvironmentClass(ctx, connect.NewRequest(&v1.UpdateEnvironmentClassRequest{
+		EnvironmentClassId: state.ID.ValueString(),
+		Enabled:            proto.Bool(false),
+	}))
 	if err != nil {
 		if isAPINotFound(err) {
 			return
@@ -295,41 +297,41 @@ func envClassPlanWithID(plan runnerEnvironmentClassModel, id string) runnerEnvir
 	return m
 }
 
-func buildConfigurationFieldValues(cfg *runnerEnvironmentClassConfigurationModel) []shared.FieldValueParam {
+func buildConfigurationFieldValues(cfg *runnerEnvironmentClassConfigurationModel) []*v1.FieldValue {
 	if cfg == nil {
 		return nil
 	}
 
-	fields := make([]shared.FieldValueParam, 0, 3)
+	fields := make([]*v1.FieldValue, 0, 3)
 
 	// instanceType is required
 	if !cfg.InstanceType.IsNull() && !cfg.InstanceType.IsUnknown() {
-		fields = append(fields, shared.FieldValueParam{
-			Key:   gitpod.F("instanceType"),
-			Value: gitpod.F(cfg.InstanceType.ValueString()),
+		fields = append(fields, &v1.FieldValue{
+			Key:   "instanceType",
+			Value: cfg.InstanceType.ValueString(),
 		})
 	}
 
 	// diskSizeGB is optional
 	if !cfg.DiskSizeGB.IsNull() && !cfg.DiskSizeGB.IsUnknown() {
-		fields = append(fields, shared.FieldValueParam{
-			Key:   gitpod.F("diskSizeGB"),
-			Value: gitpod.F(fmt.Sprintf("%d", cfg.DiskSizeGB.ValueInt64())),
+		fields = append(fields, &v1.FieldValue{
+			Key:   "diskSizeGB",
+			Value: fmt.Sprintf("%d", cfg.DiskSizeGB.ValueInt64()),
 		})
 	}
 
 	// spot is optional
 	if !cfg.Spot.IsNull() && !cfg.Spot.IsUnknown() {
-		fields = append(fields, shared.FieldValueParam{
-			Key:   gitpod.F("spot"),
-			Value: gitpod.F(fmt.Sprintf("%t", cfg.Spot.ValueBool())),
+		fields = append(fields, &v1.FieldValue{
+			Key:   "spot",
+			Value: fmt.Sprintf("%t", cfg.Spot.ValueBool()),
 		})
 	}
 
 	return fields
 }
 
-func mapConfigurationToModel(fields []shared.FieldValue) *runnerEnvironmentClassConfigurationModel {
+func mapConfigurationToModel(fields []*v1.FieldValue) *runnerEnvironmentClassConfigurationModel {
 	if len(fields) == 0 {
 		return nil
 	}
@@ -337,17 +339,17 @@ func mapConfigurationToModel(fields []shared.FieldValue) *runnerEnvironmentClass
 	cfg := &runnerEnvironmentClassConfigurationModel{}
 
 	for _, field := range fields {
-		switch field.Key {
+		switch field.GetKey() {
 		case "instanceType":
-			cfg.InstanceType = types.StringValue(field.Value)
+			cfg.InstanceType = types.StringValue(field.GetValue())
 		case "diskSizeGB":
-			if val, err := strconv.ParseInt(field.Value, 10, 64); err == nil {
+			if val, err := strconv.ParseInt(field.GetValue(), 10, 64); err == nil {
 				cfg.DiskSizeGB = types.Int64Value(val)
 			} else {
 				cfg.DiskSizeGB = types.Int64Null()
 			}
 		case "spot":
-			if val, err := strconv.ParseBool(field.Value); err == nil {
+			if val, err := strconv.ParseBool(field.GetValue()); err == nil {
 				cfg.Spot = types.BoolValue(val)
 			} else {
 				cfg.Spot = types.BoolNull()
@@ -358,13 +360,13 @@ func mapConfigurationToModel(fields []shared.FieldValue) *runnerEnvironmentClass
 	return cfg
 }
 
-func mapEnvironmentClassToModel(environmentClass gitpod.EnvironmentClass) runnerEnvironmentClassModel {
+func mapEnvironmentClassToModel(environmentClass *v1.EnvironmentClass) runnerEnvironmentClassModel {
 	return runnerEnvironmentClassModel{
-		ID:            types.StringValue(environmentClass.ID),
-		RunnerID:      types.StringValue(environmentClass.RunnerID),
-		DisplayName:   stringValueOrNull(environmentClass.DisplayName),
-		Description:   stringValueOrNull(environmentClass.Description),
-		Configuration: mapConfigurationToModel(environmentClass.Configuration),
-		Enabled:       types.BoolValue(environmentClass.Enabled),
+		ID:            types.StringValue(environmentClass.GetId()),
+		RunnerID:      types.StringValue(environmentClass.GetRunnerId()),
+		DisplayName:   stringValueOrNull(environmentClass.GetDisplayName()),
+		Description:   stringValueOrNull(environmentClass.GetDescription()),
+		Configuration: mapConfigurationToModel(environmentClass.GetConfiguration()),
+		Enabled:       types.BoolValue(environmentClass.GetEnabled()),
 	}
 }

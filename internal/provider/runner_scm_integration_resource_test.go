@@ -3,23 +3,25 @@ package provider
 import (
 	"testing"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestMapScmIntegrationToModel_MapsAllFields(t *testing.T) {
-	integration := gitpod.ScmIntegration{
-		ID:       "int-123",
-		RunnerID: "runner-456",
-		ScmID:    "github",
+	integration := &v1.SCMIntegration{
+		Id:       "int-123",
+		RunnerId: "runner-456",
+		ScmId:    "github",
 		Host:     "github.com",
-		OAuth: gitpod.ScmIntegrationOAuthConfig{
-			ClientID:  "oauth-client-id",
-			IssuerURL: "https://auth.example.com",
+		Oauth: &v1.SCMIntegrationOAuthConfig{
+			ClientId:  "oauth-client-id",
+			IssuerUrl: "https://auth.example.com",
 		},
 		Pat:              true,
-		VirtualDirectory: "/tfs",
+		VirtualDirectory: proto.String("/tfs"),
 	}
 
 	prior := runnerScmIntegrationModel{
@@ -40,10 +42,10 @@ func TestMapScmIntegrationToModel_MapsAllFields(t *testing.T) {
 }
 
 func TestMapScmIntegrationToModel_PatOnly(t *testing.T) {
-	integration := gitpod.ScmIntegration{
-		ID:       "int-789",
-		RunnerID: "runner-abc",
-		ScmID:    "github",
+	integration := &v1.SCMIntegration{
+		Id:       "int-789",
+		RunnerId: "runner-abc",
+		ScmId:    "github",
 		Host:     "github.com",
 		Pat:      true,
 	}
@@ -64,13 +66,13 @@ func TestMapScmIntegrationToModel_PatOnly(t *testing.T) {
 }
 
 func TestMapScmIntegrationToModel_PreservesClientSecret(t *testing.T) {
-	integration := gitpod.ScmIntegration{
-		ID:       "int-1",
-		RunnerID: "runner-1",
-		ScmID:    "gitlab",
+	integration := &v1.SCMIntegration{
+		Id:       "int-1",
+		RunnerId: "runner-1",
+		ScmId:    "gitlab",
 		Host:     "gitlab.com",
-		OAuth: gitpod.ScmIntegrationOAuthConfig{
-			ClientID: "client-id",
+		Oauth: &v1.SCMIntegrationOAuthConfig{
+			ClientId: "client-id",
 		},
 	}
 
@@ -83,10 +85,10 @@ func TestMapScmIntegrationToModel_PreservesClientSecret(t *testing.T) {
 }
 
 func TestMapScmIntegrationToModel_PreservesExplicitEmptyOAuthClientIDFromPrior(t *testing.T) {
-	integration := gitpod.ScmIntegration{
-		ID:       "int-1",
-		RunnerID: "runner-1",
-		ScmID:    "github",
+	integration := &v1.SCMIntegration{
+		Id:       "int-1",
+		RunnerId: "runner-1",
+		ScmId:    "github",
 		Host:     "github.com",
 	}
 
@@ -101,10 +103,10 @@ func TestMapScmIntegrationToModel_PreservesExplicitEmptyOAuthClientIDFromPrior(t
 }
 
 func TestMapScmIntegrationToModel_DoesNotPreservePriorNonEmptyOAuthClientIDWhenAPIReturnsEmpty(t *testing.T) {
-	integration := gitpod.ScmIntegration{
-		ID:       "int-1",
-		RunnerID: "runner-1",
-		ScmID:    "github",
+	integration := &v1.SCMIntegration{
+		Id:       "int-1",
+		RunnerId: "runner-1",
+		ScmId:    "github",
 		Host:     "github.com",
 	}
 
@@ -127,8 +129,8 @@ func TestBuildRunnerScmIntegrationUpdateParams_PreservesExplicitEmptyOAuthClient
 
 	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
 
-	assert.True(t, got.OAuthClientID.Present)
-	assert.Equal(t, "", got.OAuthClientID.Value)
+	require.NotNil(t, got.OauthClientId)
+	assert.Equal(t, "", got.GetOauthClientId())
 }
 
 func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientIDWhenRemovedFromConfig(t *testing.T) {
@@ -142,8 +144,8 @@ func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientIDWhenRemovedFro
 
 	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
 
-	assert.True(t, got.OAuthClientID.Present)
-	assert.Equal(t, "", got.OAuthClientID.Value)
+	require.NotNil(t, got.OauthClientId)
+	assert.Equal(t, "", got.GetOauthClientId())
 }
 
 func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientSecretWhenRemovedFromConfig(t *testing.T) {
@@ -157,8 +159,8 @@ func TestBuildRunnerScmIntegrationUpdateParams_ClearsOAuthClientSecretWhenRemove
 
 	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
 
-	assert.True(t, got.OAuthPlaintextClientSecret.Present)
-	assert.Equal(t, "", got.OAuthPlaintextClientSecret.Value)
+	require.NotNil(t, got.OauthPlaintextClientSecret)
+	assert.Equal(t, "", got.GetOauthPlaintextClientSecret())
 }
 
 func TestBuildRunnerScmIntegrationUpdateParams_DoesNotClearUnknownOAuthClientSecret(t *testing.T) {
@@ -172,5 +174,5 @@ func TestBuildRunnerScmIntegrationUpdateParams_DoesNotClearUnknownOAuthClientSec
 
 	got := buildRunnerScmIntegrationUpdateParams(plan, prior)
 
-	assert.False(t, got.OAuthPlaintextClientSecret.Present)
+	assert.Nil(t, got.OauthPlaintextClientSecret)
 }

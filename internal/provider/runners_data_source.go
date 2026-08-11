@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -14,7 +16,7 @@ import (
 var _ datasource.DataSource = &runnersDataSource{}
 
 type runnersDataSource struct {
-	client *gitpod.Client
+	client *sdk.Client
 }
 
 func NewRunnersDataSource() datasource.DataSource {
@@ -110,20 +112,23 @@ func (d *runnersDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		}
 	}
 
-	iter := d.client.Runners.ListAutoPaging(ctx, gitpod.RunnerListParams{
-		Pagination: gitpod.F(gitpod.RunnerListParamsPagination{
-			PageSize: gitpod.F(int64(100)),
-		}),
-	})
-
-	runners := make([]gitpod.Runner, 0)
-	for iter.Next() {
-		runner := iter.Current()
-		if matchesRunnerFilters(runner, config.Filters) {
-			runners = append(runners, runner)
+	runners, err := collectPaged(func(token string) ([]*v1.Runner, string, error) {
+		listResp, err := d.client.Services.Runner.ListRunners(ctx, connect.NewRequest(&v1.ListRunnersRequest{
+			Pagination: &v1.PaginationRequest{PageSize: 100, Token: token},
+		}))
+		if err != nil {
+			return nil, "", err
 		}
-	}
-	if err := iter.Err(); err != nil {
+
+		matching := make([]*v1.Runner, 0, len(listResp.Msg.GetRunners()))
+		for _, runner := range listResp.Msg.GetRunners() {
+			if matchesRunnerFilters(runner, config.Filters) {
+				matching = append(matching, runner)
+			}
+		}
+		return matching, listResp.Msg.GetPagination().GetNextToken(), nil
+	})
+	if err != nil {
 		resp.Diagnostics.AddError("Failed to list runners", err.Error())
 		return
 	}
@@ -133,14 +138,14 @@ func (d *runnersDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func matchesRunnerFilters(runner gitpod.Runner, filters []runnersFilterModel) bool {
+func matchesRunnerFilters(runner *v1.Runner, filters []runnersFilterModel) bool {
 	for _, f := range filters {
 		var fieldValue string
 		switch f.Name.ValueString() {
 		case "name":
-			fieldValue = runner.Name
+			fieldValue = runner.GetName()
 		case "runner_manager_id":
-			fieldValue = runner.RunnerManagerID
+			fieldValue = runner.GetRunnerManagerId()
 		default:
 			return false
 		}
@@ -159,9 +164,9 @@ func matchesRunnerFilters(runner gitpod.Runner, filters []runnersFilterModel) bo
 	return true
 }
 
-func mapRunnersToDataSourceModel(runners []gitpod.Runner) runnersDataSourceModel {
+func mapRunnersToDataSourceModel(runners []*v1.Runner) runnersDataSourceModel {
 	sort.Slice(runners, func(i, j int) bool {
-		return runners[i].RunnerID < runners[j].RunnerID
+		return runners[i].GetRunnerId() < runners[j].GetRunnerId()
 	})
 
 	state := runnersDataSourceModel{
@@ -170,11 +175,11 @@ func mapRunnersToDataSourceModel(runners []gitpod.Runner) runnersDataSourceModel
 
 	for _, runner := range runners {
 		state.Runners = append(state.Runners, runnerListItemModel{
-			ID:              types.StringValue(runner.RunnerID),
-			Name:            types.StringValue(runner.Name),
-			ProviderType:    types.StringValue(string(runner.Provider)),
-			RunnerManagerID: stringValueOrNull(runner.RunnerManagerID),
-			Status:          runnerStatusObjectValue(runner.Status),
+			ID:              types.StringValue(runner.GetRunnerId()),
+			Name:            types.StringValue(runner.GetName()),
+			ProviderType:    types.StringValue(enumString(runner.GetProvider())),
+			RunnerManagerID: stringValueOrNull(runner.GetRunnerManagerId()),
+			Status:          runnerStatusObjectValue(runner.GetStatus()),
 		})
 	}
 

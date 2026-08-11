@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gitpod "github.com/gitpod-io/gitpod-sdk-go"
-	"github.com/gitpod-io/gitpod-sdk-go/shared"
+	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -15,26 +14,25 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMapSecretToModel_MapsAllFields(t *testing.T) {
 	now := time.Date(2026, time.March, 23, 10, 0, 0, 0, time.UTC)
-	secret := gitpod.Secret{
-		ID:                             "secret-123",
-		Name:                           "DATABASE_URL",
-		EnvironmentVariable:            true,
-		FilePath:                       "/etc/secrets/db",
-		ContainerRegistryBasicAuthHost: "",
-		APIOnly:                        false,
-		Scope: gitpod.SecretScope{
-			ProjectID: "project-456",
+	// mount is a oneof, so only one of the four mount attributes is ever set.
+	secret := &v1.Secret{
+		Id:    "secret-123",
+		Name:  "DATABASE_URL",
+		Mount: &v1.Secret_EnvironmentVariable{EnvironmentVariable: true},
+		Scope: &v1.SecretScope{
+			Scope: &v1.SecretScope_ProjectId{ProjectId: "project-456"},
 		},
-		Creator: shared.Subject{
-			ID:        "user-789",
-			Principal: shared.PrincipalUser,
+		Creator: &v1.Subject{
+			Id:        "user-789",
+			Principal: v1.Principal_PRINCIPAL_USER,
 		},
-		CreatedAt: now,
-		UpdatedAt: now.Add(time.Hour),
+		CreatedAt: timestamppb.New(now),
+		UpdatedAt: timestamppb.New(now.Add(time.Hour)),
 	}
 
 	prior := secretModel{
@@ -47,23 +45,88 @@ func TestMapSecretToModel_MapsAllFields(t *testing.T) {
 	assert.Equal(t, "DATABASE_URL", got.Name.ValueString())
 	assert.Equal(t, "project-456", got.ProjectID.ValueString())
 	assert.True(t, got.EnvironmentVariable.ValueBool())
-	assert.Equal(t, "/etc/secrets/db", got.FilePath.ValueString())
+	assert.True(t, got.FilePath.IsNull())
 	assert.True(t, got.ContainerRegistryBasicAuthHost.IsNull())
 	assert.False(t, got.APIOnly.ValueBool())
 	assert.Equal(t, "user-789", got.CreatorID.ValueString())
-	assert.Equal(t, string(shared.PrincipalUser), got.CreatorPrincipal.ValueString())
+	assert.Equal(t, v1.Principal_PRINCIPAL_USER.String(), got.CreatorPrincipal.ValueString())
 	assert.Equal(t, now.Format(time.RFC3339Nano), got.CreatedAt.ValueString())
 	assert.Equal(t, now.Add(time.Hour).Format(time.RFC3339Nano), got.UpdatedAt.ValueString())
 	// Value preserved from prior state
 	assert.Equal(t, "postgres://localhost/db", got.Value.ValueString())
 }
 
+func TestMapSecretToModel_FilePathMount(t *testing.T) {
+	secret := &v1.Secret{
+		Id:    "secret-123",
+		Name:  "DATABASE_URL",
+		Mount: &v1.Secret_FilePath{FilePath: "/etc/secrets/db"},
+		Scope: &v1.SecretScope{
+			Scope: &v1.SecretScope_ProjectId{ProjectId: "project-456"},
+		},
+	}
+
+	got := mapSecretToModel(secret, secretModel{})
+
+	assert.Equal(t, "/etc/secrets/db", got.FilePath.ValueString())
+	assert.False(t, got.EnvironmentVariable.ValueBool())
+	assert.True(t, got.ContainerRegistryBasicAuthHost.IsNull())
+	assert.False(t, got.APIOnly.ValueBool())
+}
+
+// environment_variable and api_only are optional-and-computed, so a secret
+// created with file_path reads back environment_variable=false. That false must
+// not count as a second mount or a replace would fail as a conflict.
+func TestApplySecretMount_IgnoresFalseBooleanMounts(t *testing.T) {
+	params := &v1.CreateSecretRequest{}
+	configured := applySecretMount(params, secretModel{
+		EnvironmentVariable: types.BoolValue(false),
+		APIOnly:             types.BoolValue(false),
+		FilePath:            types.StringValue("/run/secret"),
+	})
+
+	assert.Equal(t, []string{"file_path"}, configured)
+	assert.Equal(t, "/run/secret", params.GetFilePath())
+}
+
+func TestApplySecretMount_IgnoresEmptyStringMounts(t *testing.T) {
+	params := &v1.CreateSecretRequest{}
+	configured := applySecretMount(params, secretModel{
+		EnvironmentVariable:            types.BoolValue(true),
+		FilePath:                       types.StringValue(""),
+		ContainerRegistryBasicAuthHost: types.StringValue(""),
+	})
+
+	assert.Equal(t, []string{"environment_variable"}, configured)
+	assert.True(t, params.GetEnvironmentVariable())
+}
+
+func TestApplySecretMount_RejectsMoreThanOneMount(t *testing.T) {
+	params := &v1.CreateSecretRequest{}
+	configured := applySecretMount(params, secretModel{
+		EnvironmentVariable: types.BoolValue(true),
+		FilePath:            types.StringValue("/etc/secrets/db"),
+	})
+
+	assert.Equal(t, []string{"environment_variable", "file_path"}, configured)
+}
+
+func TestApplySecretMount_SingleMount(t *testing.T) {
+	params := &v1.CreateSecretRequest{}
+	configured := applySecretMount(params, secretModel{
+		EnvironmentVariable: types.BoolValue(true),
+	})
+
+	assert.Equal(t, []string{"environment_variable"}, configured)
+	assert.True(t, params.GetEnvironmentVariable())
+}
+
 func TestMapSecretToModel_PreservesValueFromPrior(t *testing.T) {
-	secret := gitpod.Secret{
-		ID:   "secret-1",
+	secret := &v1.Secret{
+		Id:   "secret-1",
 		Name: "API_KEY",
-		Scope: gitpod.SecretScope{
-			ProjectID: "proj-1",
+		Scope: &v1.SecretScope{
+			Scope: &v1.SecretScope_ProjectId{ProjectId: "proj-1"},
 		},
 	}
 
@@ -76,11 +139,11 @@ func TestMapSecretToModel_PreservesValueFromPrior(t *testing.T) {
 }
 
 func TestMapSecretToModel_NullValueWhenPriorIsNull(t *testing.T) {
-	secret := gitpod.Secret{
-		ID:   "secret-1",
+	secret := &v1.Secret{
+		Id:   "secret-1",
 		Name: "API_KEY",
-		Scope: gitpod.SecretScope{
-			ProjectID: "proj-1",
+		Scope: &v1.SecretScope{
+			Scope: &v1.SecretScope_ProjectId{ProjectId: "proj-1"},
 		},
 	}
 
@@ -93,11 +156,11 @@ func TestMapSecretToModel_NullValueWhenPriorIsNull(t *testing.T) {
 }
 
 func TestMapSecretToModel_EmptyTimestampsAreNull(t *testing.T) {
-	secret := gitpod.Secret{
-		ID:   "secret-1",
+	secret := &v1.Secret{
+		Id:   "secret-1",
 		Name: "API_KEY",
-		Scope: gitpod.SecretScope{
-			ProjectID: "proj-1",
+		Scope: &v1.SecretScope{
+			Scope: &v1.SecretScope_ProjectId{ProjectId: "proj-1"},
 		},
 	}
 

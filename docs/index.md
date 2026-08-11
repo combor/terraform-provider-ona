@@ -14,7 +14,7 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 ```terraform
 provider "ona" {
   api_key  = var.ona_api_key  # or set GITPOD_API_KEY env var
-  base_url = var.ona_base_url # optional, defaults to https://app.gitpod.io/api
+  base_url = var.ona_base_url # optional, defaults to https://app.ona.com/api
 }
 ```
 
@@ -24,6 +24,6 @@ provider "ona" {
 ### Optional
 
 - `api_key` (String, Sensitive) API key. Falls back to `GITPOD_API_KEY` env var.
-- `base_url` (String) API base URL. Falls back to `GITPOD_BASE_URL` env var. Defaults to `https://app.gitpod.io/api`.
-- `max_retries` (Number) Maximum number of retries per request. Defaults to the SDK default (2). Set to `0` to disable retries.
+- `base_url` (String) API base URL. Falls back to `GITPOD_BASE_URL` env var. Defaults to `https://app.ona.com/api`.
+- `max_retries` (Number) Maximum number of retries per request. Defaults to `2`. Set to `0` to disable retries.
 - `request_timeout` (String) Per-attempt request timeout as a Go duration (for example `20s` or `2m`). If unset, requests have no SDK-level timeout.
