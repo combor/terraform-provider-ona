@@ -68,9 +68,6 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				MarkdownDescription: "Organization ID the group belongs to. Resolved from the authenticated identity.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			// member_count is deliberately left to go unknown on update: memberships
-			// change outside Terraform, so pinning the prior value would risk an
-			// inconsistent-result-after-apply error.
 			"member_count": schema.Int64Attribute{
 				Computed:            true,
 				MarkdownDescription: "Number of members in the group.",
@@ -205,10 +202,6 @@ func (r *groupResource) ImportState(ctx context.Context, req resource.ImportStat
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// mapGroupToResourceModel converts an API group into resource state. The name
-// and description come back from the API, but an explicitly empty description
-// is preserved from the prior value so configuring "" does not read back as
-// null and produce a perpetual diff.
 func mapGroupToResourceModel(group *v1.Group, prior groupModel) groupModel {
 	return groupModel{
 		ID:             types.StringValue(group.GetId()),

@@ -110,10 +110,6 @@ func enumString[E interface {
 	return value.String()
 }
 
-// enumValidators rejects an unrecognised enum name while the plan is built,
-// where the error can point at the attribute in the configuration, instead of
-// part-way through an apply. It takes the same proto name-to-number map the
-// conversion uses, so the accepted names cannot drift from the SDK.
 func enumValidators(values map[string]int32) []validator.String {
 	return []validator.String{stringvalidator.OneOf(sortedEnumNames(values)...)}
 }
@@ -166,18 +162,12 @@ func sortedEnumNames(values map[string]int32) []string {
 	return names
 }
 
-// pairID joins the two identifiers of a resource that the API keys by a pair
-// rather than by an ID of its own.
 func pairID(first, second string) string {
 	return first + "/" + second
 }
 
-// parsePairImportID splits an import ID of the form "<first>/<second>".
-// format is the spelling shown to the user when the ID does not parse.
 func parsePairImportID(importID, format string) (string, string, error) {
 	first, second, ok := strings.Cut(importID, "/")
-	// A third component would end up inside the second ID, and the import would
-	// then quietly refresh into nothing instead of reporting a bad identifier.
 	if !ok || first == "" || second == "" || strings.Contains(second, "/") {
 		return "", "", fmt.Errorf("expected import identifier in the format %s", format)
 	}
@@ -185,9 +175,6 @@ func parsePairImportID(importID, format string) (string, string, error) {
 	return first, second, nil
 }
 
-// authenticatedOrganizationID resolves the organization the API key belongs to.
-// Resources that are organization-scoped need the ID on create, and the API key
-// is only ever valid for one organization.
 func authenticatedOrganizationID(ctx context.Context, client *sdk.Client) (string, error) {
 	if client == nil {
 		return "", fmt.Errorf("provider is not configured")

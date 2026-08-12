@@ -479,8 +479,6 @@ func TestEnumValidators(t *testing.T) {
 	})
 
 	t.Run("leaves an unconfigured attribute alone", func(t *testing.T) {
-		// Optional enum attributes are null in most configurations, and an
-		// unknown value cannot be checked until it is resolved.
 		assert.False(t, validate(types.StringNull()).HasError())
 		assert.False(t, validate(types.StringUnknown()).HasError())
 	})

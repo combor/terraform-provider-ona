@@ -54,8 +54,6 @@ func TestGroupResourceSchema_DescriptionIsOptionalOnly(t *testing.T) {
 	require.False(t, resp.Diagnostics.HasError())
 
 	description := resp.Schema.Attributes["description"]
-	// Optional-and-computed would let the API's empty string win over an
-	// explicitly configured "", so description is optional only.
 	assert.True(t, description.IsOptional())
 	assert.False(t, description.IsComputed())
 }

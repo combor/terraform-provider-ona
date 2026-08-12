@@ -75,8 +75,6 @@ func TestParseValidUntil(t *testing.T) {
 	})
 }
 
-// valid_until is required by the API and cannot be changed afterwards, so the
-// schema has to force replacement rather than plan an impossible update.
 func TestServiceAccountSchema_ValidUntilIsRequiredAndForcesReplacement(t *testing.T) {
 	var resp resource.SchemaResponse
 	NewServiceAccountResource().Schema(context.Background(), resource.SchemaRequest{}, &resp)
@@ -88,8 +86,6 @@ func TestServiceAccountSchema_ValidUntilIsRequiredAndForcesReplacement(t *testin
 	assert.True(t, validUntil.IsRequired())
 	require.Len(t, validUntil.PlanModifiers, 1)
 
-	// Run the modifier rather than inspecting it: the modifier structs hold
-	// function pointers, so only their behaviour is comparable.
 	raw := nonNullRawValue(ctx, t, resp.Schema)
 	modifyResp := planmodifier.StringResponse{}
 	validUntil.PlanModifiers[0].PlanModifyString(ctx, planmodifier.StringRequest{
@@ -103,9 +99,6 @@ func TestServiceAccountSchema_ValidUntilIsRequiredAndForcesReplacement(t *testin
 	assert.True(t, modifyResp.RequiresReplace)
 }
 
-// nonNullRawValue builds a fully populated raw object for a schema whose
-// attributes are all strings. Plan modifiers use the raw state and plan only to
-// tell creation and destruction apart, so the attribute values do not matter.
 func nonNullRawValue(ctx context.Context, t *testing.T, s schema.Schema) tftypes.Value {
 	t.Helper()
 

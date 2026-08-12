@@ -74,9 +74,6 @@ func (r *securityPolicyResource) Schema(_ context.Context, _ resource.SchemaRequ
 				MarkdownDescription: "Organization ID the policy belongs to. Resolved from the authenticated identity.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			// Optional without Computed: Terraform proposes the prior state for a
-			// removed optional-and-computed attribute, which would make a
-			// guardrail impossible to clear once it had been set.
 			"ports": schema.SingleNestedAttribute{
 				Optional:            true,
 				MarkdownDescription: "Port guardrails.",
@@ -92,16 +89,10 @@ func (r *securityPolicyResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Optional:            true,
 				MarkdownDescription: "Executable guardrails.",
 				Attributes: map[string]schema.Attribute{
-					// Read-only: the API accepts no effect other than the
-					// EFFECT_ALLOW it normalises an omitted value to.
 					"default_effect": schema.StringAttribute{
 						Computed:            true,
 						MarkdownDescription: "Effect applied to executables that match no rule. Always `EFFECT_ALLOW`.",
 					},
-					// A set, not a list: the API attaches no meaning to rule order
-					// (conflicting decisions resolve to block, not to the first
-					// match), and a response that reordered the rules would not
-					// match a planned list.
 					"rules": schema.SetNestedAttribute{
 						Optional:            true,
 						MarkdownDescription: "Per-executable decisions.",
@@ -217,8 +208,6 @@ func (r *securityPolicyResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	// Metadata and spec are sent in full: the API replaces what it is given, so
-	// a rule removed from the configuration has to be absent from the request.
 	updateResp, err := r.client.Services.Security.UpdateSecurityPolicy(ctx, connect.NewRequest(&v1.UpdateSecurityPolicyRequest{
 		SecurityPolicyId: prior.ID.ValueString(),
 		Metadata:         &v1.SecurityPolicy_Metadata{Name: plan.Name.ValueString()},
@@ -256,9 +245,6 @@ func (r *securityPolicyResource) ImportState(ctx context.Context, req resource.I
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// buildSecurityPolicySpec converts the configured guardrails into the spec the
-// API expects. The spec itself is always sent — it is a required field — while
-// its two sub-policies are omitted when the configuration leaves them out.
 func buildSecurityPolicySpec(plan securityPolicyModel, diagnostics *diag.Diagnostics) *v1.SecurityPolicy_Spec {
 	spec := &v1.SecurityPolicy_Spec{}
 
@@ -271,8 +257,6 @@ func buildSecurityPolicySpec(plan securityPolicyModel, diagnostics *diag.Diagnos
 	}
 
 	if executables := plan.Executables; executables != nil {
-		// default_effect is read-only, so the API decides it; only the rules are
-		// sent back.
 		spec.Executables = &v1.SecurityPolicy_Spec_ExecutablePolicy{}
 		for _, rule := range executables.Rules {
 			spec.Executables.Rules = append(spec.Executables.Rules, &v1.SecurityPolicy_Spec_ExecutablePolicy_Rule{
@@ -285,9 +269,6 @@ func buildSecurityPolicySpec(plan securityPolicyModel, diagnostics *diag.Diagnos
 	return spec
 }
 
-// ruleEffectValues are the decisions a rule may carry. EFFECT_ALLOW is a valid
-// enum value elsewhere but not on a rule, so it is left out here and reported
-// like any other unrecognised effect.
 var ruleEffectValues = map[string]int32{
 	v1.SecurityPolicy_EFFECT_AUDIT.String(): int32(v1.SecurityPolicy_EFFECT_AUDIT),
 	v1.SecurityPolicy_EFFECT_BLOCK.String(): int32(v1.SecurityPolicy_EFFECT_BLOCK),
@@ -301,10 +282,6 @@ func isKnownString(value types.String) bool {
 	return !value.IsNull() && !value.IsUnknown()
 }
 
-// mapSecurityPolicyToModel converts an API policy into resource state. prior is
-// the plan on create and update, and the previous state on refresh; it is only
-// consulted to tell a configured-but-empty rule list from an absent one, which
-// the API reports identically.
 func mapSecurityPolicyToModel(policy *v1.SecurityPolicy, prior securityPolicyModel) securityPolicyModel {
 	model := securityPolicyModel{
 		ID:             types.StringValue(policy.GetId()),
@@ -337,9 +314,6 @@ func mapSecurityPolicyToModel(policy *v1.SecurityPolicy, prior securityPolicyMod
 	return model
 }
 
-// priorRuleList seeds the rule slice so that an API response with no rules maps
-// back to whatever the configuration said: an empty list stays empty, an
-// omitted list stays null.
 func priorRuleList(prior securityPolicyModel, count int) []securityPolicyRuleModel {
 	if count == 0 && (prior.Executables == nil || prior.Executables.Rules == nil) {
 		return nil

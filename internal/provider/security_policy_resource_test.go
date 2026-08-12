@@ -18,7 +18,6 @@ func TestBuildSecurityPolicySpec(t *testing.T) {
 		got := buildSecurityPolicySpec(securityPolicyModel{}, &diags)
 		require.False(t, diags.HasError())
 
-		// The spec itself is required by the API, its sub-policies are not.
 		require.NotNil(t, got)
 		assert.Nil(t, got.GetPorts())
 		assert.Nil(t, got.GetExecutables())
@@ -81,7 +80,6 @@ func TestBuildSecurityPolicySpec(t *testing.T) {
 		}, &diags)
 
 		require.True(t, diags.HasError())
-		// The rejection lists only the decisions a rule may carry.
 		assert.Contains(t, diags.Errors()[0].Detail(), "EFFECT_AUDIT")
 		assert.Contains(t, diags.Errors()[0].Detail(), "EFFECT_BLOCK")
 	})
@@ -148,8 +146,6 @@ func TestMapSecurityPolicyToModel_AbsentSubPoliciesStayNull(t *testing.T) {
 	assert.Nil(t, got.Executables)
 }
 
-// The API reports "no rules" the same way whether the configuration omitted the
-// list or set it to [], so state has to follow what was planned.
 func TestMapSecurityPolicyToModel_RuleListFollowsThePlan(t *testing.T) {
 	policy := &v1.SecurityPolicy{
 		Id:       "policy-1",

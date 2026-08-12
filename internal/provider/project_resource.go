@@ -151,8 +151,6 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 								"context_url": schema.SingleNestedAttribute{
 									Optional:            true,
 									MarkdownDescription: "URL used to initialize the project context.",
-									// Each spec entry carries exactly one initializer; use
-									// separate entries to combine them.
 									Validators: []validator.Object{
 										objectvalidator.ExactlyOneOf(
 											path.MatchRelative().AtParent().AtName("context_url"),

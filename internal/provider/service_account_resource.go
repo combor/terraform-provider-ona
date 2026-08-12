@@ -152,9 +152,6 @@ func (r *serviceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 	}
 
 	account := getResp.Msg.GetServiceAccount()
-	// Deletion is a soft delete, so a deleted account is still readable. A
-	// suspended account can no longer authenticate, which is what deletion
-	// means here, so Terraform treats it as gone.
 	if account.GetSuspended() {
 		resp.State.RemoveResource(ctx)
 		return
@@ -182,8 +179,6 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	// Both fields are sent on every update: the API treats an omitted field as
-	// unchanged, so a removed description would otherwise survive.
 	updateResp, err := r.client.Services.ServiceAccount.UpdateServiceAccount(ctx, connect.NewRequest(&v1.UpdateServiceAccountRequest{
 		ServiceAccountId: prior.ID.ValueString(),
 		Name:             pointer(plan.Name.ValueString()),
@@ -221,10 +216,6 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// parseValidUntil converts the configured expiry into the protobuf timestamp
-// the API expects. The attribute is required, so a missing value only reaches
-// here through an unknown; sending nothing lets the API reject it rather than
-// silently creating an account that expired at the zero time.
 func parseValidUntil(validUntil types.String, diagnostics *diag.Diagnostics) *timestamppb.Timestamp {
 	if validUntil.IsNull() || validUntil.IsUnknown() {
 		return nil
@@ -240,9 +231,6 @@ func parseValidUntil(validUntil types.String, diagnostics *diag.Diagnostics) *ti
 	return timestamppb.New(parsed)
 }
 
-// timestampValueWithPrior keeps the configured spelling of a timestamp when it
-// denotes the same instant the API returned, so writing an offset such as
-// 2027-01-31T01:00:00+01:00 does not diff against the UTC value read back.
 func timestampValueWithPrior(value *timestamppb.Timestamp, prior types.String) types.String {
 	if !prior.IsNull() && !prior.IsUnknown() && value != nil {
 		if configured, err := time.Parse(time.RFC3339, prior.ValueString()); err == nil && configured.Equal(value.AsTime()) {

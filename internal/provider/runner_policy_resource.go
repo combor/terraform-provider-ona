@@ -112,7 +112,6 @@ func (r *runnerPolicyResource) Read(ctx context.Context, req resource.ReadReques
 	runnerID := state.RunnerID.ValueString()
 	policy, err := r.findRunnerPolicy(ctx, runnerID, state.GroupID.ValueString())
 	if err != nil {
-		// A deleted runner takes its policies with it.
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
@@ -188,10 +187,6 @@ func (r *runnerPolicyResource) ImportState(ctx context.Context, req resource.Imp
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("group_id"), groupID)...)
 }
 
-// findRunnerPolicy returns the runner's policy for the given group, or nil when
-// the group has no policy on that runner. It stops at the first match rather
-// than draining every page, so a later page failing cannot fail a lookup that
-// already found its policy.
 func (r *runnerPolicyResource) findRunnerPolicy(ctx context.Context, runnerID, groupID string) (*v1.RunnerPolicy, error) {
 	token := ""
 	for {

@@ -11,8 +11,6 @@ import (
 )
 
 func TestMapProjectPolicyToModel(t *testing.T) {
-	// The API returns only the group and role, so the project ID and the
-	// composite resource ID have to come from the caller.
 	got := mapProjectPolicyToModel("project-1", &v1.ProjectPolicy{
 		GroupId: "group-1",
 		Role:    v1.ProjectRole_PROJECT_ROLE_EDITOR,

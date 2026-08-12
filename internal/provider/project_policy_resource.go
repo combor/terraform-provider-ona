@@ -112,7 +112,6 @@ func (r *projectPolicyResource) Read(ctx context.Context, req resource.ReadReque
 	projectID := state.ProjectID.ValueString()
 	policy, err := r.findProjectPolicy(ctx, projectID, state.GroupID.ValueString())
 	if err != nil {
-		// A deleted project takes its policies with it.
 		if isAPINotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
@@ -188,10 +187,6 @@ func (r *projectPolicyResource) ImportState(ctx context.Context, req resource.Im
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("group_id"), groupID)...)
 }
 
-// findProjectPolicy returns the project's policy for the given group, or nil
-// when the group has no policy on that project. It stops at the first match
-// rather than draining every page, so a later page failing cannot fail a lookup
-// that already found its policy.
 func (r *projectPolicyResource) findProjectPolicy(ctx context.Context, projectID, groupID string) (*v1.ProjectPolicy, error) {
 	token := ""
 	for {

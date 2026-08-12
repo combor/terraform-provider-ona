@@ -11,8 +11,6 @@ import (
 )
 
 func TestMapRunnerPolicyToModel(t *testing.T) {
-	// The API returns only the group and role, so the runner ID and the
-	// composite resource ID have to come from the caller.
 	got := mapRunnerPolicyToModel("runner-1", &v1.RunnerPolicy{
 		GroupId: "group-1",
 		Role:    v1.RunnerRole_RUNNER_ROLE_ADMIN,
