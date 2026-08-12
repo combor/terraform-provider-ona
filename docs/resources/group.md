@@ -24,11 +24,11 @@ resource "ona_group" "platform" {
 
 ### Required
 
-- `name` (String) Group name.
+- `name` (String) Group name. The API accepts 3 to 80 characters.
 
 ### Optional
 
-- `description` (String) Group description.
+- `description` (String) Group description. The API accepts at most 255 characters.
 
 ### Read-Only
 

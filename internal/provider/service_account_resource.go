@@ -8,12 +8,14 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -58,10 +60,12 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"name": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Service account name. The API accepts 1 to 64 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthBetween(1, 64)},
 			},
 			"description": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Service account description. The API accepts at most 500 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthAtMost(500)},
 			},
 			"valid_until": schema.StringAttribute{
 				Required:            true,

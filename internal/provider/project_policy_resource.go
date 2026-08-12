@@ -61,6 +61,7 @@ func (r *projectPolicyResource) Schema(_ context.Context, _ resource.SchemaReque
 			"role": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Role granted to the group: `PROJECT_ROLE_ADMIN`, `PROJECT_ROLE_EDITOR` or `PROJECT_ROLE_USER`.",
+				Validators:          enumValidators(v1.ProjectRole_value),
 			},
 		},
 	}

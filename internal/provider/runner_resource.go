@@ -8,12 +8,15 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"google.golang.org/protobuf/proto"
@@ -87,11 +90,13 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Human-readable runner name.",
+				MarkdownDescription: "Human-readable runner name. The API accepts 3 to 127 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthBetween(3, 127)},
 			},
 			"provider_type": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Runner provider type (e.g. `RUNNER_PROVIDER_AWS_EC2`, `RUNNER_PROVIDER_LINUX_HOST`).",
+				Validators:          enumValidators(v1.RunnerProvider_value),
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"runner_manager_id": schema.StringAttribute{
@@ -112,6 +117,7 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 					"variant": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: "Runner variant (`RUNNER_VARIANT_STANDARD`, `RUNNER_VARIANT_ENTERPRISE`).",
+						Validators:          enumValidators(v1.RunnerVariant_value),
 					},
 					"configuration": schema.SingleNestedAttribute{
 						Optional: true,
@@ -133,10 +139,12 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 							"release_channel": schema.StringAttribute{
 								Optional:            true,
 								MarkdownDescription: "Release channel (`RUNNER_RELEASE_CHANNEL_STABLE`, `RUNNER_RELEASE_CHANNEL_LATEST`).",
+								Validators:          enumValidators(v1.RunnerReleaseChannel_value),
 							},
 							"log_level": schema.StringAttribute{
 								Optional:            true,
 								MarkdownDescription: "Log level (`LOG_LEVEL_DEBUG`, `LOG_LEVEL_INFO`, `LOG_LEVEL_WARN`, `LOG_LEVEL_ERROR`).",
+								Validators:          enumValidators(v1.LogLevel_value),
 							},
 							"metrics": schema.SingleNestedAttribute{
 								Optional: true,
@@ -167,11 +175,13 @@ func (r *runnerResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 									"start_hour": schema.Int64Attribute{
 										Required:            true,
 										MarkdownDescription: "Start of the update window as a UTC hour (0-23).",
+										Validators:          []validator.Int64{int64validator.Between(0, 23)},
 									},
 									"end_hour": schema.Int64Attribute{
 										Optional:            true,
 										Computed:            true,
 										MarkdownDescription: "End of the update window as a UTC hour (0-23). Defaults to start_hour + 2.",
+										Validators:          []validator.Int64{int64validator.Between(0, 23)},
 									},
 								},
 							},

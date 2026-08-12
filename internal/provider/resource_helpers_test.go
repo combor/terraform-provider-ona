@@ -4,8 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"context"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -445,5 +448,40 @@ func TestParsePairImportID(t *testing.T) {
 			_, _, err := parsePairImportID(importID, "<runner-id>/<group-id>")
 			assert.Error(t, err, importID)
 		}
+	})
+}
+
+func TestEnumValidators(t *testing.T) {
+	validators := enumValidators(v1.RunnerRole_value)
+	require.Len(t, validators, 1)
+
+	validate := func(value types.String) diag.Diagnostics {
+		var resp validator.StringResponse
+		validators[0].ValidateString(context.Background(), validator.StringRequest{
+			Path:        path.Root("role"),
+			ConfigValue: value,
+		}, &resp)
+		return resp.Diagnostics
+	}
+
+	t.Run("accepts the enum names", func(t *testing.T) {
+		for _, name := range []string{"RUNNER_ROLE_ADMIN", "RUNNER_ROLE_USER"} {
+			assert.False(t, validate(types.StringValue(name)).HasError(), name)
+		}
+	})
+
+	t.Run("rejects unknown names and the unspecified zero value", func(t *testing.T) {
+		for _, name := range []string{"admin", "RUNNER_ROLE_TYPO", "RUNNER_ROLE_UNSPECIFIED", ""} {
+			diags := validate(types.StringValue(name))
+			require.True(t, diags.HasError(), name)
+			assert.Contains(t, diags.Errors()[0].Detail(), "RUNNER_ROLE_ADMIN")
+		}
+	})
+
+	t.Run("leaves an unconfigured attribute alone", func(t *testing.T) {
+		// Optional enum attributes are null in most configurations, and an
+		// unknown value cannot be checked until it is resolved.
+		assert.False(t, validate(types.StringNull()).HasError())
+		assert.False(t, validate(types.StringUnknown()).HasError())
 	})
 }

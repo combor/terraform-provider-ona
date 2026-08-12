@@ -11,8 +11,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -106,6 +108,14 @@ func enumString[E interface {
 		return ""
 	}
 	return value.String()
+}
+
+// enumValidators rejects an unrecognised enum name while the plan is built,
+// where the error can point at the attribute in the configuration, instead of
+// part-way through an apply. It takes the same proto name-to-number map the
+// conversion uses, so the accepted names cannot drift from the SDK.
+func enumValidators(values map[string]int32) []validator.String {
+	return []validator.String{stringvalidator.OneOf(sortedEnumNames(values)...)}
 }
 
 // enumValue is the inverse of enumString: it resolves a proto enum name from

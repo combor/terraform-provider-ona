@@ -36,7 +36,7 @@ resource "ona_runner" "example" {
 
 ### Required
 
-- `name` (String) Human-readable runner name.
+- `name` (String) Human-readable runner name. The API accepts 3 to 127 characters.
 - `provider_type` (String) Runner provider type (e.g. `RUNNER_PROVIDER_AWS_EC2`, `RUNNER_PROVIDER_LINUX_HOST`).
 
 ### Optional

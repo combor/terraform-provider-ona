@@ -7,11 +7,13 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -53,11 +55,13 @@ func (r *groupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Group name.",
+				MarkdownDescription: "Group name. The API accepts 3 to 80 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthBetween(3, 80)},
 			},
 			"description": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Group description.",
+				MarkdownDescription: "Group description. The API accepts at most 255 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthAtMost(255)},
 			},
 			"organization_id": schema.StringAttribute{
 				Computed:            true,

@@ -8,6 +8,9 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -15,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -122,7 +126,8 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Human-readable project name.",
+				MarkdownDescription: "Human-readable project name. The API accepts 1 to 80 characters.",
+				Validators:          []validator.String{stringvalidator.UTF8LengthBetween(1, 80)},
 			},
 			"automations_file_path": schema.StringAttribute{
 				Optional:            true,
@@ -146,6 +151,14 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 								"context_url": schema.SingleNestedAttribute{
 									Optional:            true,
 									MarkdownDescription: "URL used to initialize the project context.",
+									// Each spec entry carries exactly one initializer; use
+									// separate entries to combine them.
+									Validators: []validator.Object{
+										objectvalidator.ExactlyOneOf(
+											path.MatchRelative().AtParent().AtName("context_url"),
+											path.MatchRelative().AtParent().AtName("git"),
+										),
+									},
 									Attributes: map[string]schema.Attribute{
 										"url": schema.StringAttribute{
 											Required:            true,
@@ -175,6 +188,7 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 											Optional:            true,
 											Computed:            true,
 											MarkdownDescription: "Git clone target mode.",
+											Validators:          enumValidators(v1.GitInitializer_CloneTargetMode_value),
 										},
 										"upstream_remote_uri": schema.StringAttribute{
 											Optional:            true,
@@ -220,6 +234,7 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 							"principal": schema.StringAttribute{
 								Required:            true,
 								MarkdownDescription: "Executor principal.",
+								Validators:          enumValidators(v1.Principal_value),
 							},
 						},
 					},
@@ -239,6 +254,7 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 									"hour_utc": schema.Int64Attribute{
 										Required:            true,
 										MarkdownDescription: "UTC hour (0-23) for the daily prebuild trigger.",
+										Validators:          []validator.Int64{int64validator.Between(0, 23)},
 									},
 								},
 							},

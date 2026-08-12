@@ -61,6 +61,7 @@ func (r *runnerPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 			"role": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Role granted to the group: `RUNNER_ROLE_ADMIN` or `RUNNER_ROLE_USER`.",
+				Validators:          enumValidators(v1.RunnerRole_value),
 			},
 		},
 	}

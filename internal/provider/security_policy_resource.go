@@ -84,6 +84,7 @@ func (r *securityPolicyResource) Schema(_ context.Context, _ resource.SchemaRequ
 					"max_admission_level": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: "Caps how widely a user may share a port: `ADMISSION_LEVEL_OWNER_ONLY`, `ADMISSION_LEVEL_CREATOR_ONLY`, `ADMISSION_LEVEL_ORGANIZATION` or `ADMISSION_LEVEL_EVERYONE`.",
+						Validators:          enumValidators(v1.AdmissionLevel_value),
 					},
 				},
 			},
@@ -113,6 +114,7 @@ func (r *securityPolicyResource) Schema(_ context.Context, _ resource.SchemaRequ
 								"effect": schema.StringAttribute{
 									Required:            true,
 									MarkdownDescription: "Decision for this executable: `EFFECT_AUDIT` or `EFFECT_BLOCK`. `EFFECT_ALLOW` is not accepted on a rule.",
+									Validators:          enumValidators(ruleEffectValues),
 								},
 							},
 						},
