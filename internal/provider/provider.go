@@ -15,6 +15,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 )
 
 const defaultBaseURL = "https://app.ona.com/api"
@@ -71,6 +73,7 @@ func (p *onaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 			"max_retries": schema.Int64Attribute{
 				Optional:            true,
 				MarkdownDescription: "Maximum number of retries per request. Defaults to `2`. Set to `0` to disable retries.",
+				Validators:          []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"request_timeout": schema.StringAttribute{
 				Optional:            true,
@@ -202,11 +205,17 @@ func newSDKClient(apiKey, baseURL string, httpClient *http.Client) (*sdk.Client,
 
 func (p *onaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewGroupResource,
+		NewOrganizationPoliciesResource,
+		NewProjectPolicyResource,
 		NewProjectResource,
 		NewRunnerResource,
 		NewRunnerEnvironmentClassResource,
+		NewRunnerPolicyResource,
 		NewRunnerScmIntegrationResource,
 		NewSecretResource,
+		NewSecurityPolicyResource,
+		NewServiceAccountResource,
 	}
 }
 

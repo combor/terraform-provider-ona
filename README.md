@@ -15,6 +15,7 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 
 - [Terraform Registry](https://registry.terraform.io/providers/combor/ona/latest)
 - [Provider Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/index.md)
+- [Organization Policies Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/organization_policies.md)
 - [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
 - [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
 - [Runner Environment Class Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner_environment_class.md)
@@ -36,6 +37,7 @@ Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.co
 
 Resources:
 
+- `ona_organization_policies`
 - `ona_project`
 - `ona_runner`
 - `ona_runner_environment_class`
@@ -150,6 +152,7 @@ See [examples/main.tf](https://github.com/combor/terraform-provider-ona/blob/mai
 
 ```bash
 terraform import ona_runner.example <runner-id>
+terraform import ona_organization_policies.current current
 terraform import ona_runner_environment_class.example <environment-class-id>
 terraform import ona_runner_scm_integration.github <scm-integration-id>
 terraform import ona_project.example <project-id>

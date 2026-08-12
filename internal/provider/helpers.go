@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,8 +11,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -107,6 +110,10 @@ func enumString[E interface {
 	return value.String()
 }
 
+func enumValidators(values map[string]int32) []validator.String {
+	return []validator.String{stringvalidator.OneOf(sortedEnumNames(values)...)}
+}
+
 // enumValue is the inverse of enumString: it resolves a proto enum name from
 // configuration back to its numeric value. An unknown name is reported rather
 // than silently sent as the unspecified zero value, which the API would accept
@@ -153,6 +160,35 @@ func sortedEnumNames(values map[string]int32) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func pairID(first, second string) string {
+	return first + "/" + second
+}
+
+func parsePairImportID(importID, format string) (string, string, error) {
+	first, second, ok := strings.Cut(importID, "/")
+	if !ok || first == "" || second == "" || strings.Contains(second, "/") {
+		return "", "", fmt.Errorf("expected import identifier in the format %s", format)
+	}
+
+	return first, second, nil
+}
+
+func authenticatedOrganizationID(ctx context.Context, client *sdk.Client) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("provider is not configured")
+	}
+
+	result, err := client.Services.Identity.GetAuthenticatedIdentity(ctx, connect.NewRequest(&v1.GetAuthenticatedIdentityRequest{}))
+	if err != nil {
+		return "", fmt.Errorf("get authenticated identity: %w", err)
+	}
+	organizationID := result.Msg.GetOrganizationId()
+	if organizationID == "" {
+		return "", fmt.Errorf("authenticated identity has no organization ID")
+	}
+	return organizationID, nil
 }
 
 // isAPINotFound reports whether err is an API error signalling a missing

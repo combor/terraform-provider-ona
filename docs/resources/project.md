@@ -60,7 +60,7 @@ resource "ona_project" "example" {
 ### Required
 
 - `initializer` (Attributes) Defines how the project content is initialized. (see [below for nested schema](#nestedatt--initializer))
-- `name` (String) Human-readable project name.
+- `name` (String) Human-readable project name. The API accepts 1 to 80 characters.
 
 ### Optional
 
