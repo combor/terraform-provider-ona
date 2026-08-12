@@ -1,10 +1,10 @@
-# Terraform Provider Ona
+# Terraform Provider for Ona — combor/ona
 
 [![CI](https://github.com/combor/terraform-provider-ona/actions/workflows/ci.yml/badge.svg)](https://github.com/combor/terraform-provider-ona/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/combor/terraform-provider-ona?display_name=tag)](https://github.com/combor/terraform-provider-ona/releases)
 [![License](https://img.shields.io/github/license/combor/terraform-provider-ona)](https://github.com/combor/terraform-provider-ona/blob/main/LICENSE)
 
-Terraform provider for managing [Gitpod](https://gitpod.io) resources on [ona.com](https://ona.com).
+Community-maintained Terraform provider for [Ona](https://ona.com) (formerly Gitpod), published as [`combor/ona`](https://registry.terraform.io/providers/combor/ona/latest).
 
 ## Requirements
 
