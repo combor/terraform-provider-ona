@@ -9,7 +9,7 @@ Terraform provider for managing Gitpod resources on ona.com. The provider uses t
 - Provider registry address: `registry.terraform.io/combor/ona`
 - Provider type name: `ona`
 - Provider configuration: `api_key`, `base_url`, `max_retries`, `request_timeout`
-- Resources: `ona_group`, `ona_organization_policies`, `ona_project`, `ona_project_policy`, `ona_runner`, `ona_runner_environment_class`, `ona_runner_policy`, `ona_runner_scm_integration`, `ona_secret`
+- Resources: `ona_group`, `ona_organization_policies`, `ona_project`, `ona_project_policy`, `ona_runner`, `ona_runner_environment_class`, `ona_runner_policy`, `ona_runner_scm_integration`, `ona_secret`, `ona_service_account`
 - Data sources: `ona_authenticated_identity`, `ona_group`, `ona_groups`, `ona_project`, `ona_runner`, `ona_runner_environment_classes`, `ona_runners`, `ona_runner_token`
 
 ## Build and test commands
