@@ -3,7 +3,7 @@ module github.com/combor/terraform-provider-ona
 go 1.26.5
 
 require (
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/gitpod-io/gitpod-sdk-go v1.2.0
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
