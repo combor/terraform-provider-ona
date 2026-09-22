@@ -65,9 +65,10 @@ resource "ona_project" "example" {
     ]
   }
 
-  environment_classes = [
+  # Leave the API defaults in place when the runner reports no classes.
+  environment_classes = length(data.ona_runner_environment_classes.example.environment_classes) > 0 ? [
     { environment_class_id = data.ona_runner_environment_classes.example.environment_classes[0].id },
-  ]
+  ] : null
 
   prebuild_configuration = {
     enabled               = true
