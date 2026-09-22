@@ -9,7 +9,7 @@ Community-maintained Terraform provider for [Ona](https://ona.com) (formerly Git
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.7.0
-- [Go](https://golang.org/doc/install) >= 1.26 (for building from source)
+- [Go](https://golang.org/doc/install) >= 1.27.1 (for building from source)
 
 ## Quick Links
 
