@@ -2,10 +2,16 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/gitpod-io/gitpod-sdk-go/v1/v1connect"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/stretchr/testify/assert"
@@ -439,4 +445,157 @@ func TestMapProjectInitializerToModel_KeepsPriorFieldsWithinActiveVariant(t *tes
 
 	require.NotNil(t, got.Specs[0].Git)
 	assert.Equal(t, "src/provider", got.Specs[0].Git.CheckoutLocation.ValueString())
+}
+
+func environmentClassListValue(t *testing.T, models []projectEnvironmentClassModel) types.List {
+	t.Helper()
+	value, diags := types.ListValueFrom(context.Background(), projectEnvironmentClassObjectType(), models)
+	require.False(t, diags.HasError())
+	return value
+}
+
+func TestBuildProjectEnvironmentClassesParam_OrderFollowsListPosition(t *testing.T) {
+	value := environmentClassListValue(t, []projectEnvironmentClassModel{
+		{EnvironmentClassID: types.StringValue("class-1"), LocalRunner: types.BoolNull()},
+		{EnvironmentClassID: types.StringNull(), LocalRunner: types.BoolValue(true)},
+	})
+
+	got, diags := buildProjectEnvironmentClassesParam(context.Background(), value)
+	require.False(t, diags.HasError())
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "class-1", got[0].GetEnvironmentClassId())
+	assert.Equal(t, int32(0), got[0].GetOrder())
+	assert.True(t, got[1].GetLocalRunner())
+	assert.Equal(t, int32(1), got[1].GetOrder())
+}
+
+func TestBuildProjectEnvironmentClassesParam_NullOrUnknownSendsNothing(t *testing.T) {
+	for name, value := range map[string]types.List{
+		"null":    types.ListNull(projectEnvironmentClassObjectType()),
+		"unknown": types.ListUnknown(projectEnvironmentClassObjectType()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, diags := buildProjectEnvironmentClassesParam(context.Background(), value)
+			require.False(t, diags.HasError())
+			assert.Nil(t, got)
+		})
+	}
+}
+
+func TestBuildProjectEnvironmentClassesParam_RejectsEntryWithoutVariant(t *testing.T) {
+	// local_runner = false selects nothing: the oneof only has a true variant.
+	value := environmentClassListValue(t, []projectEnvironmentClassModel{
+		{EnvironmentClassID: types.StringNull(), LocalRunner: types.BoolValue(false)},
+	})
+
+	got, diags := buildProjectEnvironmentClassesParam(context.Background(), value)
+	require.True(t, diags.HasError())
+	assert.Nil(t, got)
+}
+
+func TestMapProjectEnvironmentClassesToModel_SortsByOrderAndLeavesOtherVariantNull(t *testing.T) {
+	classes := []*v1.ProjectEnvironmentClass{
+		{Order: 1, EnvironmentClass: &v1.ProjectEnvironmentClass_LocalRunner{LocalRunner: true}},
+		{Order: 0, EnvironmentClass: &v1.ProjectEnvironmentClass_EnvironmentClassId{EnvironmentClassId: "class-1"}},
+	}
+
+	got, diags := mapProjectEnvironmentClassesToModel(context.Background(), classes, types.ListUnknown(projectEnvironmentClassObjectType()))
+	require.False(t, diags.HasError())
+
+	var models []projectEnvironmentClassModel
+	require.False(t, got.ElementsAs(context.Background(), &models, false).HasError())
+	require.Len(t, models, 2)
+	assert.Equal(t, "class-1", models[0].EnvironmentClassID.ValueString())
+	assert.True(t, models[0].LocalRunner.IsNull())
+	assert.True(t, models[1].EnvironmentClassID.IsNull())
+	assert.True(t, models[1].LocalRunner.ValueBool())
+}
+
+func TestMapProjectEnvironmentClassesToModel_EmptyResponse(t *testing.T) {
+	prior := environmentClassListValue(t, []projectEnvironmentClassModel{
+		{EnvironmentClassID: types.StringValue("class-1"), LocalRunner: types.BoolNull()},
+	})
+
+	got, diags := mapProjectEnvironmentClassesToModel(context.Background(), nil, prior)
+	require.False(t, diags.HasError())
+	assert.True(t, got.Equal(prior))
+
+	for name, prior := range map[string]types.List{
+		"uninitialized": {},
+		"null":          types.ListNull(projectEnvironmentClassObjectType()),
+		"unknown":       types.ListUnknown(projectEnvironmentClassObjectType()),
+		"empty":         environmentClassListValue(t, []projectEnvironmentClassModel{}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, diags := mapProjectEnvironmentClassesToModel(t.Context(), nil, prior)
+			require.False(t, diags.HasError(), "%v", diags)
+			if name == "empty" {
+				assert.True(t, got.Equal(prior))
+			} else {
+				assert.True(t, got.Equal(types.ListNull(projectEnvironmentClassObjectType())))
+			}
+		})
+	}
+}
+
+func TestProjectResourceCreate_EnvironmentClassUpdateFailurePreservesState(t *testing.T) {
+	ctx := t.Context()
+	project := &v1.Project{Id: "project-1", Metadata: &v1.ProjectMetadata{Name: "project-name"}}
+	client := &projectClassUpdateFailureClient{project: project}
+	r := &projectResource{client: &sdk.Client{Services: sdk.ServiceClients{Project: client}}}
+	var schemaResp resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &schemaResp)
+	require.False(t, schemaResp.Diagnostics.HasError(), "%v", schemaResp.Diagnostics)
+
+	plan := tfsdk.Plan{Schema: schemaResp.Schema}
+	diags := plan.Set(ctx, &projectModel{
+		ID:   types.StringUnknown(),
+		Name: types.StringValue("project-name"),
+		EnvironmentClasses: environmentClassListValue(t, []projectEnvironmentClassModel{
+			{EnvironmentClassID: types.StringValue("class-1"), LocalRunner: types.BoolNull()},
+		}),
+		Initializer: &projectInitializerModel{Specs: []projectInitializerSpecModel{{
+			ContextURL: &projectInitializerContextURLModel{URL: types.StringValue("https://example.com/repo")},
+		}}},
+		PrebuildConfiguration: types.ObjectNull(projectPrebuildConfigurationAttrTypes()),
+		RecommendedEditors:    types.MapNull(projectRecommendedEditorObjectType()),
+		Metadata:              types.ObjectUnknown(projectMetadataAttrTypes()),
+		UsedBy:                types.ObjectUnknown(projectUsedByAttrTypes()),
+	})
+	require.False(t, diags.HasError(), "%v", diags)
+	resp := resource.CreateResponse{State: tfsdk.State{Schema: schemaResp.Schema}}
+
+	r.Create(ctx, resource.CreateRequest{Plan: plan}, &resp)
+
+	require.NotNil(t, client.updateRequest, "%v", resp.Diagnostics)
+	assert.Equal(t, "project-1", client.updateRequest.ProjectId)
+	require.Len(t, client.updateRequest.ProjectEnvironmentClasses, 1)
+	assert.Equal(t, "class-1", client.updateRequest.ProjectEnvironmentClasses[0].GetEnvironmentClassId())
+	assert.True(t, resp.Diagnostics.HasError(), "%v", resp.Diagnostics)
+	require.Len(t, resp.Diagnostics, 1)
+	assert.Equal(t, "Project created without environment classes", resp.Diagnostics[0].Summary())
+	assert.Contains(t, resp.Diagnostics[0].Detail(), "class update failed")
+
+	var state projectModel
+	diags = resp.State.Get(ctx, &state)
+	require.False(t, diags.HasError(), "%v", diags)
+	assert.Equal(t, "project-1", state.ID.ValueString())
+	assert.Equal(t, "project-name", state.Name.ValueString())
+	assert.True(t, state.EnvironmentClasses.Equal(types.ListNull(projectEnvironmentClassObjectType())))
+}
+
+type projectClassUpdateFailureClient struct {
+	v1connect.ProjectServiceClient
+	project       *v1.Project
+	updateRequest *v1.UpdateProjectEnvironmentClassesRequest
+}
+
+func (c *projectClassUpdateFailureClient) CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error) {
+	return connect.NewResponse(&v1.CreateProjectResponse{Project: c.project}), nil
+}
+
+func (c *projectClassUpdateFailureClient) UpdateProjectEnvironmentClasses(_ context.Context, req *connect.Request[v1.UpdateProjectEnvironmentClassesRequest]) (*connect.Response[v1.UpdateProjectEnvironmentClassesResponse], error) {
+	c.updateRequest = req.Msg
+	return nil, errors.New("class update failed")
 }

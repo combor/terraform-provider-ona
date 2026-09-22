@@ -29,6 +29,12 @@ resource "ona_project" "example" {
     ]
   }
 
+  # Listed in priority order.
+  environment_classes = [
+    { environment_class_id = "<environment-class-id>" },
+    { local_runner = true },
+  ]
+
   prebuild_configuration = {
     enabled                 = true
     enable_jetbrains_warmup = false
@@ -66,6 +72,7 @@ resource "ona_project" "example" {
 
 - `automations_file_path` (String) Path to the automations file relative to the repository root.
 - `devcontainer_file_path` (String) Path to the devcontainer file relative to the repository root.
+- `environment_classes` (Attributes List) Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`. The API accepts 1 to 30 entries and replaces the whole list on every change. Removing this attribute from the configuration leaves the current list in place, because the API cannot clear it. (see [below for nested schema](#nestedatt--environment_classes))
 - `prebuild_configuration` (Attributes) Prebuild configuration for the project. (see [below for nested schema](#nestedatt--prebuild_configuration))
 - `recommended_editors` (Attributes Map) Recommended editors keyed by editor alias. (see [below for nested schema](#nestedatt--recommended_editors))
 - `technical_description` (String) Detailed technical description of the project.
@@ -115,6 +122,15 @@ Optional:
 - `upstream_remote_uri` (String) Upstream remote URI for fork-based repositories.
 
 
+
+
+<a id="nestedatt--environment_classes"></a>
+### Nested Schema for `environment_classes`
+
+Optional:
+
+- `environment_class_id` (String) ID of an environment class on a runner. This cannot be a local runner's environment class.
+- `local_runner` (Boolean) Use the user's local runner. Must be `true` when set.
 
 
 <a id="nestedatt--prebuild_configuration"></a>

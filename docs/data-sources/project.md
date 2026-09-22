@@ -30,6 +30,7 @@ data "ona_project" "example" {
 - `automations_file_path` (String) Path to the automations file relative to the repository root.
 - `desired_phase` (String) Desired lifecycle phase of the project.
 - `devcontainer_file_path` (String) Path to the devcontainer file relative to the repository root.
+- `environment_classes` (Attributes List) Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`. (see [below for nested schema](#nestedatt--environment_classes))
 - `initializer` (Attributes) Defines how the project content is initialized. (see [below for nested schema](#nestedatt--initializer))
 - `metadata` (Attributes) Project metadata returned by the API. (see [below for nested schema](#nestedatt--metadata))
 - `name` (String) Human-readable project name.
@@ -37,6 +38,15 @@ data "ona_project" "example" {
 - `recommended_editors` (Attributes Map) Recommended editors keyed by editor alias. (see [below for nested schema](#nestedatt--recommended_editors))
 - `technical_description` (String) Detailed technical description of the project.
 - `used_by` (Attributes) Summary of recent project usage. (see [below for nested schema](#nestedatt--used_by))
+
+<a id="nestedatt--environment_classes"></a>
+### Nested Schema for `environment_classes`
+
+Read-Only:
+
+- `environment_class_id` (String) ID of an environment class on a runner.
+- `local_runner` (Boolean) Whether the user's local runner is used.
+
 
 <a id="nestedatt--initializer"></a>
 ### Nested Schema for `initializer`

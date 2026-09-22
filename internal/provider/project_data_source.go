@@ -47,6 +47,22 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				Computed:            true,
 				MarkdownDescription: "Path to the devcontainer file relative to the repository root.",
 			},
+			"environment_classes": schema.ListNestedAttribute{
+				Computed:            true,
+				MarkdownDescription: "Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`.",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"environment_class_id": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "ID of an environment class on a runner.",
+						},
+						"local_runner": schema.BoolAttribute{
+							Computed:            true,
+							MarkdownDescription: "Whether the user's local runner is used.",
+						},
+					},
+				},
+			},
 			"initializer": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: "Defines how the project content is initialized.",
