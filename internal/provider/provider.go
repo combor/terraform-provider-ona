@@ -225,6 +225,7 @@ func (p *onaProvider) DataSources(_ context.Context) []func() datasource.DataSou
 		NewGroupDataSource,
 		NewGroupsDataSource,
 		NewProjectDataSource,
+		NewProjectsDataSource,
 		NewRunnerEnvironmentClassesDataSource,
 		NewRunnerDataSource,
 		NewRunnersDataSource,

@@ -50,6 +50,7 @@ Data sources:
 - `ona_group`
 - `ona_groups`
 - `ona_project`
+- `ona_projects`
 - `ona_runner`
 - `ona_runner_environment_classes`
 - `ona_runners`
