@@ -6,6 +6,8 @@ import (
 	"time"
 
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/stretchr/testify/assert"
@@ -14,9 +16,35 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func TestMapProjectToDataSourceModel_NoEnvironmentClassesCanSetState(t *testing.T) {
+	ctx := t.Context()
+	var schemaResp datasource.SchemaResponse
+	NewProjectDataSource().Schema(ctx, datasource.SchemaRequest{}, &schemaResp)
+	require.False(t, schemaResp.Diagnostics.HasError(), "%v", schemaResp.Diagnostics)
+
+	for name, classes := range map[string][]*v1.ProjectEnvironmentClass{
+		"omitted": nil,
+		"empty":   {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			model, diags := mapProjectToDataSourceModel(ctx, &v1.Project{Id: "project-1", EnvironmentClasses: classes})
+			require.False(t, diags.HasError(), "%v", diags)
+
+			state := tfsdk.State{Schema: schemaResp.Schema}
+			diags = state.Set(ctx, &model)
+			require.False(t, diags.HasError(), "%v", diags)
+			assert.True(t, model.EnvironmentClasses.Equal(types.ListNull(projectEnvironmentClassObjectType())))
+		})
+	}
+}
+
 func TestMapProjectToDataSourceModel_MapsComputedFields(t *testing.T) {
 	project := &v1.Project{}
 	raw := `{
+		"environmentClasses": [
+			{"environmentClassId": "class-1", "order": 0},
+			{"localRunner": true, "order": 1}
+		],
 		"prebuildConfiguration": {
 			"enabled": true,
 			"enableJetbrainsWarmup": true,
@@ -93,6 +121,12 @@ func TestMapProjectToDataSourceModel_MapsComputedFields(t *testing.T) {
 	assert.Equal(t, "https://example.com/context", got.Initializer.Specs[0].ContextURL.URL.ValueString())
 	require.NotNil(t, got.Initializer.Specs[1].Git)
 	assert.Equal(t, "https://github.com/combor/terraform-provider-ona", got.Initializer.Specs[1].Git.RemoteURI.ValueString())
+
+	var environmentClasses []projectEnvironmentClassModel
+	require.False(t, got.EnvironmentClasses.ElementsAs(context.Background(), &environmentClasses, false).HasError())
+	require.Len(t, environmentClasses, 2)
+	assert.Equal(t, "class-1", environmentClasses[0].EnvironmentClassID.ValueString())
+	assert.True(t, environmentClasses[1].LocalRunner.ValueBool())
 
 	prebuildGot, diags := projectPrebuildConfigurationModelFromObject(context.Background(), got.PrebuildConfiguration)
 	require.False(t, diags.HasError())

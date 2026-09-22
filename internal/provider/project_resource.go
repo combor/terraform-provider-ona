@@ -3,12 +3,15 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/gitpod-io/gitpod-sdk-go/sdk"
 	v1 "github.com/gitpod-io/gitpod-sdk-go/v1"
+	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -42,6 +45,7 @@ type projectModel struct {
 	Name                  types.String             `tfsdk:"name"`
 	AutomationsFilePath   types.String             `tfsdk:"automations_file_path"`
 	DevcontainerFilePath  types.String             `tfsdk:"devcontainer_file_path"`
+	EnvironmentClasses    types.List               `tfsdk:"environment_classes"`
 	Initializer           *projectInitializerModel `tfsdk:"initializer"`
 	PrebuildConfiguration types.Object             `tfsdk:"prebuild_configuration"`
 	RecommendedEditors    types.Map                `tfsdk:"recommended_editors"`
@@ -49,6 +53,11 @@ type projectModel struct {
 	DesiredPhase          types.String             `tfsdk:"desired_phase"`
 	Metadata              types.Object             `tfsdk:"metadata"`
 	UsedBy                types.Object             `tfsdk:"used_by"`
+}
+
+type projectEnvironmentClassModel struct {
+	EnvironmentClassID types.String `tfsdk:"environment_class_id"`
+	LocalRunner        types.Bool   `tfsdk:"local_runner"`
 }
 
 type projectInitializerModel struct {
@@ -138,6 +147,31 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:            true,
 				Computed:            true,
 				MarkdownDescription: "Path to the devcontainer file relative to the repository root.",
+			},
+			"environment_classes": schema.ListNestedAttribute{
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`. The API accepts 1 to 30 entries and replaces the whole list on every change. Removing this attribute from the configuration leaves the current list in place, because the API cannot clear it.",
+				Validators:          []validator.List{listvalidator.SizeBetween(1, 30)},
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"environment_class_id": schema.StringAttribute{
+							Optional:            true,
+							MarkdownDescription: "ID of an environment class on a runner. This cannot be a local runner's environment class.",
+							Validators: []validator.String{
+								stringvalidator.ExactlyOneOf(
+									path.MatchRelative().AtParent().AtName("environment_class_id"),
+									path.MatchRelative().AtParent().AtName("local_runner"),
+								),
+							},
+						},
+						"local_runner": schema.BoolAttribute{
+							Optional:            true,
+							MarkdownDescription: "Use the user's local runner. Must be `true` when set.",
+							Validators:          []validator.Bool{boolvalidator.Equals(true)},
+						},
+					},
+				},
 			},
 			"initializer": schema.SingleNestedAttribute{
 				Required:            true,
@@ -368,13 +402,21 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 
 	project := createResp.Msg.GetProject()
 
+	// CreateProject accepts neither environment classes nor recommended
+	// editors, so both are set by follow-up calls.
+	environmentClasses, environmentClassesDiags := buildProjectEnvironmentClassesParam(ctx, plan.EnvironmentClasses)
+	resp.Diagnostics.Append(environmentClassesDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	recommendedEditorsModel, recommendedEditorsDiags := projectRecommendedEditorsFromMap(ctx, plan.RecommendedEditors)
 	resp.Diagnostics.Append(recommendedEditorsDiags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if recommendedEditorsModel != nil {
+	if environmentClasses != nil || recommendedEditorsModel != nil {
 		createdStatePlan := plan
+		createdStatePlan.EnvironmentClasses = types.ListNull(projectEnvironmentClassObjectType())
 		createdStatePlan.RecommendedEditors = types.MapNull(projectRecommendedEditorObjectType())
 
 		state, diags := mapProjectToModel(ctx, project, createdStatePlan)
@@ -386,7 +428,31 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 		if resp.Diagnostics.HasError() {
 			return
 		}
+	}
 
+	if environmentClasses != nil {
+		_, err := r.client.Services.Project.UpdateProjectEnvironmentClasses(ctx, connect.NewRequest(&v1.UpdateProjectEnvironmentClassesRequest{
+			ProjectId:                 project.GetId(),
+			ProjectEnvironmentClasses: environmentClasses,
+		}))
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Project created without environment classes",
+				fmt.Sprintf(
+					"Project %s was created, but setting environment_classes failed: %s. The created project was saved in state without the configured environment_classes.",
+					project.GetId(),
+					err.Error(),
+				),
+			)
+			return
+		}
+
+		// The call replaces the whole list and returns nothing, so what was sent
+		// is what the project now has.
+		project.EnvironmentClasses = environmentClasses
+	}
+
+	if recommendedEditorsModel != nil {
 		updateParams := &v1.UpdateProjectRequest{
 			ProjectId: project.GetId(),
 		}
@@ -456,10 +522,34 @@ func (r *projectResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
+	var prior projectModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	params, diags := buildProjectUpdateParams(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	environmentClasses, diags := buildProjectEnvironmentClassesParam(ctx, plan.EnvironmentClasses)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// UpdateProject does not carry environment classes. Set them first so the
+	// UpdateProject response below already reflects the new list.
+	if environmentClasses != nil && !plan.EnvironmentClasses.Equal(prior.EnvironmentClasses) {
+		_, err := r.client.Services.Project.UpdateProjectEnvironmentClasses(ctx, connect.NewRequest(&v1.UpdateProjectEnvironmentClassesRequest{
+			ProjectId:                 plan.ID.ValueString(),
+			ProjectEnvironmentClasses: environmentClasses,
+		}))
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to update project environment classes", err.Error())
+			return
+		}
 	}
 
 	updateResp, err := r.client.Services.Project.UpdateProject(ctx, connect.NewRequest(params))
@@ -732,6 +822,46 @@ func buildRecommendedEditorsParam(ctx context.Context, editors map[string]projec
 	}, diags
 }
 
+// buildProjectEnvironmentClassesParam returns nil when environment_classes is
+// null or unknown, meaning the list is left as the API has it. Order follows
+// the position in the configured list.
+func buildProjectEnvironmentClassesParam(ctx context.Context, value types.List) ([]*v1.ProjectEnvironmentClass, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if value.IsNull() || value.IsUnknown() {
+		return nil, diags
+	}
+
+	var models []projectEnvironmentClassModel
+	diags.Append(value.ElementsAs(ctx, &models, false)...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	result := make([]*v1.ProjectEnvironmentClass, 0, len(models))
+	for idx, model := range models {
+		entry := &v1.ProjectEnvironmentClass{Order: int32(idx)}
+		switch {
+		case !model.EnvironmentClassID.IsNull() && !model.EnvironmentClassID.IsUnknown() && model.LocalRunner.IsNull():
+			entry.EnvironmentClass = &v1.ProjectEnvironmentClass_EnvironmentClassId{
+				EnvironmentClassId: model.EnvironmentClassID.ValueString(),
+			}
+		case model.EnvironmentClassID.IsNull() && model.LocalRunner.ValueBool():
+			entry.EnvironmentClass = &v1.ProjectEnvironmentClass_LocalRunner{LocalRunner: true}
+		default:
+			diags.AddError("Invalid environment class",
+				fmt.Sprintf("environment_classes[%d] must set exactly one of environment_class_id or local_runner = true.", idx))
+			continue
+		}
+		result = append(result, entry)
+	}
+
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	return result, diags
+}
+
 func mapProjectToModel(ctx context.Context, project *v1.Project, prior projectModel) (projectModel, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -744,6 +874,13 @@ func mapProjectToModel(ctx context.Context, project *v1.Project, prior projectMo
 		DesiredPhase:         mergeStringWithPrior(enumString(project.GetDesiredPhase()), prior.DesiredPhase),
 		Initializer:          mapProjectInitializerToModel(project.GetInitializer(), prior.Initializer),
 	}
+
+	environmentClasses, environmentClassesDiags := mapProjectEnvironmentClassesToModel(ctx, project.GetEnvironmentClasses(), prior.EnvironmentClasses)
+	diags.Append(environmentClassesDiags...)
+	if diags.HasError() {
+		return projectModel{}, diags
+	}
+	state.EnvironmentClasses = environmentClasses
 
 	prebuildPrior, prebuildPriorDiags := projectPrebuildConfigurationModelFromObject(ctx, prior.PrebuildConfiguration)
 	diags.Append(prebuildPriorDiags...)
@@ -798,6 +935,40 @@ func mapProjectToModel(ctx context.Context, project *v1.Project, prior projectMo
 	state.UsedBy = usedByValue
 
 	return state, diags
+}
+
+// mapProjectEnvironmentClassesToModel lists the entries by ascending order.
+// Only the variant the API returned is set, so the other stays null as it
+// is in configuration.
+func mapProjectEnvironmentClassesToModel(ctx context.Context, classes []*v1.ProjectEnvironmentClass, prior types.List) (types.List, diag.Diagnostics) {
+	if len(classes) == 0 {
+		if prior.IsNull() || prior.IsUnknown() {
+			return types.ListNull(projectEnvironmentClassObjectType()), nil
+		}
+		return prior, nil
+	}
+
+	sorted := append([]*v1.ProjectEnvironmentClass(nil), classes...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].GetOrder() < sorted[j].GetOrder()
+	})
+
+	models := make([]projectEnvironmentClassModel, 0, len(sorted))
+	for _, class := range sorted {
+		model := projectEnvironmentClassModel{
+			EnvironmentClassID: types.StringNull(),
+			LocalRunner:        types.BoolNull(),
+		}
+		switch class.GetEnvironmentClass().(type) {
+		case *v1.ProjectEnvironmentClass_EnvironmentClassId:
+			model.EnvironmentClassID = types.StringValue(class.GetEnvironmentClassId())
+		case *v1.ProjectEnvironmentClass_LocalRunner:
+			model.LocalRunner = types.BoolValue(class.GetLocalRunner())
+		}
+		models = append(models, model)
+	}
+
+	return types.ListValueFrom(ctx, projectEnvironmentClassObjectType(), models)
 }
 
 func mapProjectInitializerToModel(initializer *v1.EnvironmentInitializer, prior *projectInitializerModel) *projectInitializerModel {
@@ -1116,6 +1287,17 @@ func projectSubjectAttrTypes() map[string]attr.Type {
 
 func projectSubjectObjectType() types.ObjectType {
 	return types.ObjectType{AttrTypes: projectSubjectAttrTypes()}
+}
+
+func projectEnvironmentClassAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"environment_class_id": types.StringType,
+		"local_runner":         types.BoolType,
+	}
+}
+
+func projectEnvironmentClassObjectType() types.ObjectType {
+	return types.ObjectType{AttrTypes: projectEnvironmentClassAttrTypes()}
 }
 
 func projectPrebuildDailyScheduleAttrTypes() map[string]attr.Type {

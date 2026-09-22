@@ -65,6 +65,10 @@ resource "ona_project" "example" {
     ]
   }
 
+  environment_classes = [
+    { environment_class_id = data.ona_runner_environment_classes.example.environment_classes[0].id },
+  ]
+
   prebuild_configuration = {
     enabled               = true
     environment_class_ids = [for environment_class in data.ona_runner_environment_classes.example.environment_classes : environment_class.id]

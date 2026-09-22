@@ -14,6 +14,12 @@ resource "ona_project" "example" {
     ]
   }
 
+  # Listed in priority order.
+  environment_classes = [
+    { environment_class_id = "<environment-class-id>" },
+    { local_runner = true },
+  ]
+
   prebuild_configuration = {
     enabled                 = true
     enable_jetbrains_warmup = false
