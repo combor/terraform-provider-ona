@@ -90,6 +90,11 @@ data "ona_project" "example" {
   id = ona_project.example.id
 }
 
+data "ona_projects" "example" {
+  project_ids   = [ona_project.example.id]
+  include_count = true
+}
+
 resource "ona_secret" "example" {
   name       = "TF_CI_SECRET"
   value      = var.secret_value

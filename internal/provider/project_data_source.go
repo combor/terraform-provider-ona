@@ -28,84 +28,93 @@ func (d *projectDataSource) Metadata(_ context.Context, req datasource.MetadataR
 }
 
 func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	attributes := projectDataSourceAttributes()
+	attributes["id"] = schema.StringAttribute{
+		Required:            true,
+		MarkdownDescription: "Project ID.",
+	}
+
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Look up an existing Gitpod project by ID.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Project ID.",
-			},
-			"name": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Human-readable project name.",
-			},
-			"automations_file_path": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Path to the automations file relative to the repository root.",
-			},
-			"devcontainer_file_path": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Path to the devcontainer file relative to the repository root.",
-			},
-			"environment_classes": schema.ListNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`.",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"environment_class_id": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "ID of an environment class on a runner.",
-						},
-						"local_runner": schema.BoolAttribute{
-							Computed:            true,
-							MarkdownDescription: "Whether the user's local runner is used.",
-						},
+		Attributes:          attributes,
+	}
+}
+
+// projectDataSourceAttributes returns the computed attributes that the
+// ona_project and ona_projects data sources share, since both map projectModel.
+// It leaves out "id" for each caller to add, as ona_project takes it as input.
+func projectDataSourceAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"name": schema.StringAttribute{
+			Computed:            true,
+			MarkdownDescription: "Human-readable project name.",
+		},
+		"automations_file_path": schema.StringAttribute{
+			Computed:            true,
+			MarkdownDescription: "Path to the automations file relative to the repository root.",
+		},
+		"devcontainer_file_path": schema.StringAttribute{
+			Computed:            true,
+			MarkdownDescription: "Path to the devcontainer file relative to the repository root.",
+		},
+		"environment_classes": schema.ListNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Environment classes available to the project, in priority order. Each entry sets exactly one of `environment_class_id` or `local_runner`.",
+			NestedObject: schema.NestedAttributeObject{
+				Attributes: map[string]schema.Attribute{
+					"environment_class_id": schema.StringAttribute{
+						Computed:            true,
+						MarkdownDescription: "ID of an environment class on a runner.",
+					},
+					"local_runner": schema.BoolAttribute{
+						Computed:            true,
+						MarkdownDescription: "Whether the user's local runner is used.",
 					},
 				},
 			},
-			"initializer": schema.SingleNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Defines how the project content is initialized.",
-				Attributes: map[string]schema.Attribute{
-					"specs": schema.ListNestedAttribute{
-						Computed:            true,
-						MarkdownDescription: "Initializer specs. Each entry defines exactly one of `context_url` or `git`.",
-						NestedObject: schema.NestedAttributeObject{
-							Attributes: map[string]schema.Attribute{
-								"context_url": schema.SingleNestedAttribute{
-									Computed:            true,
-									MarkdownDescription: "URL used to initialize the project context.",
-									Attributes: map[string]schema.Attribute{
-										"url": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Source URL for the context.",
-										},
+		},
+		"initializer": schema.SingleNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Defines how the project content is initialized.",
+			Attributes: map[string]schema.Attribute{
+				"specs": schema.ListNestedAttribute{
+					Computed:            true,
+					MarkdownDescription: "Initializer specs. Each entry defines exactly one of `context_url` or `git`.",
+					NestedObject: schema.NestedAttributeObject{
+						Attributes: map[string]schema.Attribute{
+							"context_url": schema.SingleNestedAttribute{
+								Computed:            true,
+								MarkdownDescription: "URL used to initialize the project context.",
+								Attributes: map[string]schema.Attribute{
+									"url": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Source URL for the context.",
 									},
 								},
-								"git": schema.SingleNestedAttribute{
-									Computed:            true,
-									MarkdownDescription: "Git repository initializer settings.",
-									Attributes: map[string]schema.Attribute{
-										"checkout_location": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Relative checkout path inside the environment.",
-										},
-										"clone_target": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Clone target interpreted according to `target_mode`.",
-										},
-										"remote_uri": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Git remote URI.",
-										},
-										"target_mode": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Git clone target mode.",
-										},
-										"upstream_remote_uri": schema.StringAttribute{
-											Computed:            true,
-											MarkdownDescription: "Upstream remote URI for fork-based repositories.",
-										},
+							},
+							"git": schema.SingleNestedAttribute{
+								Computed:            true,
+								MarkdownDescription: "Git repository initializer settings.",
+								Attributes: map[string]schema.Attribute{
+									"checkout_location": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Relative checkout path inside the environment.",
+									},
+									"clone_target": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Clone target interpreted according to `target_mode`.",
+									},
+									"remote_uri": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Git remote URI.",
+									},
+									"target_mode": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Git clone target mode.",
+									},
+									"upstream_remote_uri": schema.StringAttribute{
+										Computed:            true,
+										MarkdownDescription: "Upstream remote URI for fork-based repositories.",
 									},
 								},
 							},
@@ -113,126 +122,126 @@ func (d *projectDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 					},
 				},
 			},
-			"prebuild_configuration": schema.SingleNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Prebuild configuration for the project.",
+		},
+		"prebuild_configuration": schema.SingleNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Prebuild configuration for the project.",
+			Attributes: map[string]schema.Attribute{
+				"enabled": schema.BoolAttribute{
+					Computed:            true,
+					MarkdownDescription: "Whether prebuilds are enabled.",
+				},
+				"enable_jetbrains_warmup": schema.BoolAttribute{
+					Computed:            true,
+					MarkdownDescription: "Whether JetBrains warmup runs during prebuilds.",
+				},
+				"environment_class_ids": schema.ListAttribute{
+					ElementType:         types.StringType,
+					Computed:            true,
+					MarkdownDescription: "Environment class IDs that should receive prebuilds.",
+				},
+				"executor": schema.SingleNestedAttribute{
+					Computed:            true,
+					MarkdownDescription: "Subject whose SCM credentials are used for prebuilds.",
+					Attributes: map[string]schema.Attribute{
+						"id": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Executor subject ID.",
+						},
+						"principal": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Executor principal.",
+						},
+					},
+				},
+				"timeout": schema.StringAttribute{
+					Computed:            true,
+					MarkdownDescription: "Maximum prebuild duration, such as `3600s`.",
+				},
+				"trigger": schema.SingleNestedAttribute{
+					Computed:            true,
+					MarkdownDescription: "Prebuild trigger settings.",
+					Attributes: map[string]schema.Attribute{
+						"daily_schedule": schema.SingleNestedAttribute{
+							Computed:            true,
+							MarkdownDescription: "Daily schedule trigger.",
+							Attributes: map[string]schema.Attribute{
+								"hour_utc": schema.Int64Attribute{
+									Computed:            true,
+									MarkdownDescription: "UTC hour (0-23) for the daily prebuild trigger.",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"recommended_editors": schema.MapNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Recommended editors keyed by editor alias.",
+			NestedObject: schema.NestedAttributeObject{
 				Attributes: map[string]schema.Attribute{
-					"enabled": schema.BoolAttribute{
-						Computed:            true,
-						MarkdownDescription: "Whether prebuilds are enabled.",
-					},
-					"enable_jetbrains_warmup": schema.BoolAttribute{
-						Computed:            true,
-						MarkdownDescription: "Whether JetBrains warmup runs during prebuilds.",
-					},
-					"environment_class_ids": schema.ListAttribute{
+					"versions": schema.ListAttribute{
 						ElementType:         types.StringType,
 						Computed:            true,
-						MarkdownDescription: "Environment class IDs that should receive prebuilds.",
-					},
-					"executor": schema.SingleNestedAttribute{
-						Computed:            true,
-						MarkdownDescription: "Subject whose SCM credentials are used for prebuilds.",
-						Attributes: map[string]schema.Attribute{
-							"id": schema.StringAttribute{
-								Computed:            true,
-								MarkdownDescription: "Executor subject ID.",
-							},
-							"principal": schema.StringAttribute{
-								Computed:            true,
-								MarkdownDescription: "Executor principal.",
-							},
-						},
-					},
-					"timeout": schema.StringAttribute{
-						Computed:            true,
-						MarkdownDescription: "Maximum prebuild duration, such as `3600s`.",
-					},
-					"trigger": schema.SingleNestedAttribute{
-						Computed:            true,
-						MarkdownDescription: "Prebuild trigger settings.",
-						Attributes: map[string]schema.Attribute{
-							"daily_schedule": schema.SingleNestedAttribute{
-								Computed:            true,
-								MarkdownDescription: "Daily schedule trigger.",
-								Attributes: map[string]schema.Attribute{
-									"hour_utc": schema.Int64Attribute{
-										Computed:            true,
-										MarkdownDescription: "UTC hour (0-23) for the daily prebuild trigger.",
-									},
-								},
-							},
-						},
+						MarkdownDescription: "Recommended versions. Use an empty list to recommend all available versions.",
 					},
 				},
 			},
-			"recommended_editors": schema.MapNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Recommended editors keyed by editor alias.",
-				NestedObject: schema.NestedAttributeObject{
+		},
+		"technical_description": schema.StringAttribute{
+			Computed:            true,
+			MarkdownDescription: "Detailed technical description of the project.",
+		},
+		"desired_phase": schema.StringAttribute{
+			Computed:            true,
+			MarkdownDescription: "Desired lifecycle phase of the project.",
+		},
+		"metadata": schema.SingleNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Project metadata returned by the API.",
+			Attributes: map[string]schema.Attribute{
+				"name": schema.StringAttribute{
+					Computed: true,
+				},
+				"organization_id": schema.StringAttribute{
+					Computed: true,
+				},
+				"created_at": schema.StringAttribute{
+					Computed: true,
+				},
+				"updated_at": schema.StringAttribute{
+					Computed: true,
+				},
+				"creator": schema.SingleNestedAttribute{
+					Computed: true,
 					Attributes: map[string]schema.Attribute{
-						"versions": schema.ListAttribute{
-							ElementType:         types.StringType,
-							Computed:            true,
-							MarkdownDescription: "Recommended versions. Use an empty list to recommend all available versions.",
+						"id": schema.StringAttribute{
+							Computed: true,
+						},
+						"principal": schema.StringAttribute{
+							Computed: true,
 						},
 					},
 				},
 			},
-			"technical_description": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Detailed technical description of the project.",
-			},
-			"desired_phase": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Desired lifecycle phase of the project.",
-			},
-			"metadata": schema.SingleNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Project metadata returned by the API.",
-				Attributes: map[string]schema.Attribute{
-					"name": schema.StringAttribute{
-						Computed: true,
-					},
-					"organization_id": schema.StringAttribute{
-						Computed: true,
-					},
-					"created_at": schema.StringAttribute{
-						Computed: true,
-					},
-					"updated_at": schema.StringAttribute{
-						Computed: true,
-					},
-					"creator": schema.SingleNestedAttribute{
-						Computed: true,
+		},
+		"used_by": schema.SingleNestedAttribute{
+			Computed:            true,
+			MarkdownDescription: "Summary of recent project usage.",
+			Attributes: map[string]schema.Attribute{
+				"total_subjects": schema.Int64Attribute{
+					Computed: true,
+				},
+				"subjects": schema.ListNestedAttribute{
+					Computed: true,
+					NestedObject: schema.NestedAttributeObject{
 						Attributes: map[string]schema.Attribute{
 							"id": schema.StringAttribute{
 								Computed: true,
 							},
 							"principal": schema.StringAttribute{
 								Computed: true,
-							},
-						},
-					},
-				},
-			},
-			"used_by": schema.SingleNestedAttribute{
-				Computed:            true,
-				MarkdownDescription: "Summary of recent project usage.",
-				Attributes: map[string]schema.Attribute{
-					"total_subjects": schema.Int64Attribute{
-						Computed: true,
-					},
-					"subjects": schema.ListNestedAttribute{
-						Computed: true,
-						NestedObject: schema.NestedAttributeObject{
-							Attributes: map[string]schema.Attribute{
-								"id": schema.StringAttribute{
-									Computed: true,
-								},
-								"principal": schema.StringAttribute{
-									Computed: true,
-								},
 							},
 						},
 					},
