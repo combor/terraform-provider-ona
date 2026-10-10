@@ -55,6 +55,20 @@ func TestProviderResources_ExposesOrganizationPolicies(t *testing.T) {
 	t.Fatal("ona_organization_policies is not registered")
 }
 
+func TestProviderResources_ExposesGroupMembership(t *testing.T) {
+	p := &onaProvider{}
+
+	for _, constructor := range p.Resources(t.Context()) {
+		var metadata resource.MetadataResponse
+		constructor().Metadata(t.Context(), resource.MetadataRequest{ProviderTypeName: "ona"}, &metadata)
+		if metadata.TypeName == "ona_group_membership" {
+			return
+		}
+	}
+
+	t.Fatal("ona_group_membership is not registered")
+}
+
 func TestInt64ToIntChecked(t *testing.T) {
 	t.Run("accepts max value", func(t *testing.T) {
 		got, err := int64ToIntChecked(7, 7)

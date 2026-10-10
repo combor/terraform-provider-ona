@@ -11,3 +11,4 @@ crash.*.log
 .terraform.lock.hcl
 .cache/
 .terraformrc.local
+graphify-out/

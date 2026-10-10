@@ -15,6 +15,7 @@ Community-maintained Terraform provider for [Ona](https://ona.com) (formerly Git
 
 - [Terraform Registry](https://registry.terraform.io/providers/combor/ona/latest)
 - [Provider Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/index.md)
+- [Group Membership Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/group_membership.md)
 - [Organization Policies Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/organization_policies.md)
 - [Project Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/project.md)
 - [Runner Resource Docs](https://github.com/combor/terraform-provider-ona/blob/main/docs/resources/runner.md)
@@ -37,6 +38,7 @@ Community-maintained Terraform provider for [Ona](https://ona.com) (formerly Git
 
 Resources:
 
+- `ona_group_membership`
 - `ona_organization_policies`
 - `ona_project`
 - `ona_runner`
@@ -158,6 +160,8 @@ terraform import ona_runner_environment_class.example <environment-class-id>
 terraform import ona_runner_scm_integration.github <scm-integration-id>
 terraform import ona_project.example <project-id>
 terraform import ona_secret.example <project-id>/<secret-id>
+terraform import ona_group_membership.developer '<group-id>/user/<user-id>'
+terraform import ona_group_membership.ci '<group-id>/service_account/<service-account-id>'
 ```
 
 ## Development
