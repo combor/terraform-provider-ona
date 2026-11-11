@@ -52,7 +52,7 @@ resource "ona_project" "example" {
       versions = []
     }
     goland = {
-      versions = ["2026.2"]
+      versions = ["2026.3"]
     }
   }
 
