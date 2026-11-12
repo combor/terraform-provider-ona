@@ -4,11 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    minimum-release-age:
-      days: 3
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    minimum-release-age:
-      days: 3
+    cooldown:
+      default-days: 7
