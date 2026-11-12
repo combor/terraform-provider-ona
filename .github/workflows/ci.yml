@@ -2,17 +2,9 @@
 name: CI
 
 on:
+  # No path filter: the default branch's ruleset requires these checks, and
+  # a filtered-out pull request would wait for them forever.
   pull_request:
-    paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.golangci.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/actions.lock'
-      - '.github/dependabot.yml'
-      - '.goreleaser.yml'
-      - 'examples/**'
   push:
     paths:
       - '**.go'
