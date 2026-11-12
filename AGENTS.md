@@ -116,6 +116,10 @@ From the repo root, before finishing a change:
 3. If schemas or examples changed: `cd tools && go generate ./...`
 4. Run local CI checks, one job per invocation: `act push -j govulncheck`, then
    `act push -j build`, then `act push -j test`
+5. If `.github/` changed: after adding a workflow or changing any `uses:`
+   line, run `gh actions-lock` and commit `.github/workflows/actions.lock`
+   (CI fails on a stale lockfile), then run `zizmor .` (v1.32.0 or newer;
+   older versions do not read the lockfile)
 
 ## Running integration tests
 
