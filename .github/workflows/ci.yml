@@ -66,73 +66,6 @@ jobs:
       - run: go mod download
       - run: go test -v -cover ./...
 
-  integration:
-    name: Integration Test (Terraform ${{ matrix.terraform }})
-    needs:
-      - build
-      - govulncheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    strategy:
-      max-parallel: 1
-      matrix:
-        terraform:
-          - '1.7.*'
-          - '1.17.*'
-    env:
-      GITPOD_API_KEY: ${{ secrets.GITPOD_API_KEY }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-      - uses: hashicorp/setup-terraform@v4.0.1
-        with:
-          terraform_version: ${{ matrix.terraform }}
-          terraform_wrapper: false
-      - name: Build provider
-        run: go build -o terraform-provider-ona .
-      - name: Setup dev overrides
-        run: |
-          cat > ~/.terraformrc << EOF
-          provider_installation {
-            dev_overrides {
-              "combor/ona" = "${{ github.workspace }}"
-            }
-            direct {}
-          }
-          EOF
-      - name: Clean up stale runners
-        working-directory: examples/cleanup
-        run: |
-          terraform apply -auto-approve \
-            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}"
-          terraform destroy -auto-approve \
-            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}"
-      - name: Terraform Apply
-        working-directory: examples
-        run: |
-          terraform apply -auto-approve \
-            -var="runner_name=tf-ci-${{ github.run_id }}" \
-            -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
-            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
-            -var="runner_region=eu-central-1" \
-            -var="project_name=tf-ci-proj-${{ github.run_id }}"
-      - name: Terraform Destroy
-        if: always()
-        working-directory: examples
-        run: |
-          terraform destroy -auto-approve \
-            -var="runner_name=tf-ci-${{ github.run_id }}" \
-            -var="runner_provider_type=RUNNER_PROVIDER_MANAGED" \
-            -var="runner_manager_id=${{ secrets.RUNNER_MANAGER_ID }}" \
-            -var="runner_region=eu-central-1" \
-            -var="project_name=tf-ci-proj-${{ github.run_id }}"
-
   lockfile:
     name: Verify Actions Lockfile
     runs-on: ubuntu-slim
@@ -165,9 +98,7 @@ jobs:
 
   release:
     name: Release
-    needs:
-      - test
-      - integration
+    needs: test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: release

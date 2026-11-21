@@ -1,4 +1,4 @@
-# Integration test configuration used by CI (terraform apply/destroy).
+# Example configuration that exercises the provider (terraform apply/destroy).
 # Documentation examples live in examples/provider/ and examples/resources/.
 
 terraform {
