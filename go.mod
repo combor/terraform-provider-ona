@@ -71,7 +71,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/huandu/xstrings v1.6.4 // indirect
 	github.com/jhump/protoreflect v1.19.0 // indirect
-	github.com/jhump/protoreflect/v2 v2.0.0 // indirect
+	github.com/jhump/protoreflect/v2 v2.0.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/lmittmann/tint v1.2.1 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
